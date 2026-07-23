@@ -1,0 +1,529 @@
+"""QA Dashboard backend."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Literal
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from .actions import (
+    airplane_mode_async,
+    airplane_status_async,
+    custom_adb_async,
+    force_stop_async,
+    kill_background_async,
+    kill_foreground_async,
+    list_arkade_sessions_async,
+    list_launchable_apps_async,
+    normalize_http_url,
+    open_url_async,
+    reboot_async,
+    screenshot_async,
+    screenrecord_start_async,
+    screenrecord_stop_async,
+    start_app_async,
+    start_package_async,
+)
+from .config import load_config
+from .credentials_vault import change_master_password, set_vault_path, unlock_vault, vault_info
+from .devices import list_devices
+from .edge_accounts import (
+    delete_edge_account_async,
+    list_edge_accounts_async,
+    save_edge_account_async,
+    start_edge_account_async,
+)
+from .ios_control import IosControl, IosControlError
+from .ios_stream import IosStream
+from .scrcpy_control import from_client_message
+from .scrcpy_stream import ScrcpyStream
+from .settings_store import SIDEBAR_ACTION_DEFS, load_settings, save_settings
+
+ROOT = Path(__file__).resolve().parents[1]
+WEB_DIST = ROOT / "web" / "dist"
+
+active_streams: dict[str, asyncio.Task] = {}
+
+
+class DeviceIdsBody(BaseModel):
+    device_ids: list[str] | None = Field(default=None, alias="deviceIds")
+
+    model_config = {"populate_by_name": True}
+
+
+class StartAppBody(DeviceIdsBody):
+    app: Literal["edge", "edge_develop"]
+
+
+class OpenUrlBody(DeviceIdsBody):
+    url: str
+
+
+class AirplaneBody(DeviceIdsBody):
+    enabled: bool
+
+
+class SingleDeviceBody(BaseModel):
+    device_id: str = Field(alias="deviceId")
+
+    model_config = {"populate_by_name": True}
+
+
+class StartPackageBody(SingleDeviceBody):
+    package: str
+    activity: str | None = None
+
+
+class EdgeAccountSaveBody(BaseModel):
+    username: str
+    password: str | None = None
+    pin: str | None = None
+
+
+class StartEdgeAccountBody(DeviceIdsBody):
+    username: str
+    password: str | None = None
+    pin: str | None = None
+    save: bool = False
+    app: Literal["edge", "edge_develop"] = "edge"
+
+
+class SettingsPatchBody(BaseModel):
+    capture_path: str | None = Field(default=None, alias="capturePath")
+    vault_path: str | None = Field(default=None, alias="vaultPath")
+    sidebar_actions: dict[str, bool] | None = Field(default=None, alias="sidebarActions")
+    custom_adb_actions: list[dict] | None = Field(default=None, alias="customAdbActions")
+    master_password: str | None = Field(default=None, alias="masterPassword")
+
+    model_config = {"populate_by_name": True}
+
+
+class MasterPasswordBody(BaseModel):
+    current_password: str | None = Field(default=None, alias="currentPassword")
+    new_password: str | None = Field(default=None, alias="newPassword")
+
+    model_config = {"populate_by_name": True}
+
+
+class CustomAdbRunBody(DeviceIdsBody):
+    action_id: str = Field(alias="actionId")
+
+    model_config = {"populate_by_name": True}
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    for task in list(active_streams.values()):
+        task.cancel()
+
+
+app = FastAPI(title="QA Dashboard", lifespan=lifespan)
+
+
+@app.get("/api/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/api/devices")
+async def devices() -> dict:
+    items = await list_devices()
+    return {"devices": [item.to_dict() for item in items]}
+
+
+@app.post("/api/actions/start-app")
+async def action_start_app(body: StartAppBody) -> dict:
+    results = await start_app_async(body.app, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/open-url")
+async def action_open_url(body: OpenUrlBody) -> dict:
+    url = normalize_http_url(body.url)
+    if not url:
+        raise HTTPException(status_code=400, detail="Invalid URL")
+    results = await open_url_async(url, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"url": url, "results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/airplane-mode")
+async def action_airplane_mode(body: AirplaneBody) -> dict:
+    results = await airplane_mode_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/airplane-mode")
+async def action_airplane_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await airplane_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/force-stop")
+async def action_force_stop(body: DeviceIdsBody) -> dict:
+    results = await force_stop_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/reboot")
+async def action_reboot(body: DeviceIdsBody) -> dict:
+    results = await reboot_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/screenshot")
+async def action_screenshot(body: DeviceIdsBody) -> dict:
+    results = await screenshot_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/screenrecord/start")
+async def action_screenrecord_start(body: SingleDeviceBody) -> dict:
+    result = await screenrecord_start_async(body.device_id)
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.detail or "Recording failed")
+    return {"results": [result.to_dict()]}
+
+
+@app.post("/api/actions/screenrecord/stop")
+async def action_screenrecord_stop(body: SingleDeviceBody) -> dict:
+    result = await screenrecord_stop_async(body.device_id)
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.detail or "Stop failed")
+    return {"results": [result.to_dict()]}
+
+
+@app.get("/api/actions/arkade-sessions")
+async def action_arkade_sessions(
+    device_id: str | None = None,
+    device_ids: str | None = None,
+) -> dict:
+    ids: list[str] | None = None
+    if device_ids:
+        ids = [part.strip() for part in device_ids.split(",") if part.strip()]
+    elif device_id:
+        ids = [device_id]
+    sessions = await list_arkade_sessions_async(ids)
+    return {"sessions": [item.to_dict() for item in sessions]}
+
+
+@app.get("/api/actions/apps")
+async def action_list_apps(device_id: str) -> dict:
+    apps = await list_launchable_apps_async(device_id)
+    return {"apps": [item.to_dict() for item in apps]}
+
+
+@app.post("/api/actions/start-package")
+async def action_start_package(body: StartPackageBody) -> dict:
+    results = await start_package_async(body.device_id, body.package, body.activity)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    if not results[0].ok:
+        raise HTTPException(status_code=400, detail=results[0].detail or "Launch failed")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/kill-background")
+async def action_kill_background(body: DeviceIdsBody) -> dict:
+    results = await kill_background_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/kill-foreground")
+async def action_kill_foreground(body: DeviceIdsBody) -> dict:
+    results = await kill_foreground_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/edge-accounts")
+async def action_edge_accounts(
+    device_id: str | None = None,
+    device_ids: str | None = None,
+) -> dict:
+    ids: list[str] | None = None
+    if device_ids:
+        ids = [part.strip() for part in device_ids.split(",") if part.strip()]
+    elif device_id:
+        ids = [device_id]
+    return await list_edge_accounts_async(ids)
+
+
+@app.post("/api/actions/edge-accounts/save")
+async def action_edge_accounts_save(body: EdgeAccountSaveBody) -> dict:
+    try:
+        account = await save_edge_account_async(body.username, body.password, body.pin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"account": account}
+
+
+@app.delete("/api/actions/edge-accounts/{username}")
+async def action_edge_accounts_delete(
+    username: str,
+    device_id: str | None = None,
+    device_ids: str | None = None,
+    forget_on_device: bool = True,
+) -> dict:
+    ids: list[str] | None = None
+    if device_ids:
+        ids = [part.strip() for part in device_ids.split(",") if part.strip()]
+    elif device_id:
+        ids = [device_id]
+    result = await delete_edge_account_async(
+        username,
+        ids,
+        forget_on_device=forget_on_device,
+    )
+    if not result.get("deleted"):
+        raise HTTPException(status_code=404, detail="Account not in local vault")
+    return result
+
+
+@app.post("/api/actions/start-edge-account")
+async def action_start_edge_account(body: StartEdgeAccountBody) -> dict:
+    if not body.username.strip():
+        raise HTTPException(status_code=400, detail="Username required")
+    results = await start_edge_account_async(
+        body.username,
+        body.device_ids,
+        password=body.password,
+        pin=body.pin,
+        save=body.save,
+        app=body.app,
+    )
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"results": [item.to_dict() for item in results]}
+
+
+def _settings_response(data: dict | None = None) -> dict:
+    settings = data or load_settings()
+    try:
+        from .credentials_vault import list_saved_accounts
+
+        accounts = [item.to_dict() for item in list_saved_accounts()]
+    except PermissionError:
+        accounts = []
+    return {
+        "capturePath": settings["capturePath"],
+        "vaultPath": settings["vaultPath"],
+        "sidebarActions": settings["sidebarActions"],
+        "sidebarActionDefs": SIDEBAR_ACTION_DEFS,
+        "customAdbActions": settings["customAdbActions"],
+        "vault": vault_info(),
+        "vaultAccounts": accounts,
+    }
+
+
+@app.get("/api/settings")
+async def get_settings() -> dict:
+    return _settings_response()
+
+
+@app.put("/api/settings")
+async def put_settings(body: SettingsPatchBody) -> dict:
+    patch: dict = {}
+    if body.capture_path is not None:
+        patch["capturePath"] = body.capture_path.strip()
+    if body.sidebar_actions is not None:
+        patch["sidebarActions"] = body.sidebar_actions
+    if body.custom_adb_actions is not None:
+        patch["customAdbActions"] = body.custom_adb_actions
+    if body.vault_path is not None:
+        try:
+            set_vault_path(body.vault_path.strip(), body.master_password)
+        except (PermissionError, ValueError, OSError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        patch["vaultPath"] = str(vault_info()["path"])
+    settings = save_settings(patch) if patch else load_settings()
+    return _settings_response(settings)
+
+
+@app.post("/api/settings/master-password")
+async def post_master_password(body: MasterPasswordBody) -> dict:
+    try:
+        info = change_master_password(body.current_password, body.new_password)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"vault": info}
+
+
+class UnlockVaultBody(BaseModel):
+    password: str
+
+
+@app.post("/api/settings/unlock-vault")
+async def post_unlock_vault(body: UnlockVaultBody) -> dict:
+    try:
+        unlock_vault(body.password)
+    except (PermissionError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"vault": vault_info()}
+
+
+@app.post("/api/actions/custom-adb")
+async def action_custom_adb(body: CustomAdbRunBody) -> dict:
+    results = await custom_adb_async(body.action_id, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="Custom action not found or no devices")
+    return {"results": [item.to_dict() for item in results]}
+
+
+async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
+    await stream.start()
+    await websocket.send_bytes(await stream.config_message())
+
+    async def pump_video() -> None:
+        async for packet in stream.stream_packets():
+            await websocket.send_bytes(packet)
+
+    async def pump_control() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            text = message.get("text")
+            if not text:
+                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            payload = from_client_message(data)
+            if payload:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, stream.send_control, payload)
+
+    video_task = asyncio.create_task(pump_video())
+    control_task = asyncio.create_task(pump_control())
+    done, pending = await asyncio.wait(
+        {video_task, control_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+
+
+async def _relay_ios(websocket: WebSocket, stream: IosStream) -> None:
+    control = IosControl(stream.udid)
+
+    async def pump_video() -> None:
+        async for packet in stream.stream_packets():
+            await websocket.send_bytes(packet)
+
+    async def pump_control() -> None:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            text = message.get("text")
+            if not text:
+                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                continue
+            try:
+                await control.handle(data)
+            except IosControlError as exc:
+                try:
+                    await websocket.send_json({"error": str(exc), "control": True})
+                except Exception:
+                    pass
+
+    video_task = asyncio.create_task(pump_video())
+    control_task = asyncio.create_task(pump_control())
+    done, pending = await asyncio.wait(
+        {video_task, control_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for task in pending:
+        task.cancel()
+
+
+@app.websocket("/ws/stream/{device_id}")
+async def stream_device(websocket: WebSocket, device_id: str) -> None:
+    await websocket.accept()
+    all_devices = await list_devices()
+    device = next((d for d in all_devices if d.id == device_id), None)
+    if device is None:
+        await websocket.close(code=4404)
+        return
+
+    stream: ScrcpyStream | IosStream | None = None
+    try:
+        if device.platform == "android":
+            stream = ScrcpyStream(device_id)
+            await _relay_android(websocket, stream)
+        else:
+            stream = IosStream(device_id)
+            await stream.start()
+            await _relay_ios(websocket, stream)
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        try:
+            await websocket.send_json({"error": str(exc)})
+        except Exception:
+            pass
+    finally:
+        if stream is not None:
+            await stream.close()
+
+
+def mount_frontend() -> None:
+    if WEB_DIST.exists():
+        assets_dir = WEB_DIST / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+        mockups_dir = WEB_DIST / "mockups"
+        if mockups_dir.exists():
+            app.mount("/mockups", StaticFiles(directory=mockups_dir), name="mockups")
+
+        @app.get("/{full_path:path}")
+        async def spa(full_path: str) -> FileResponse:
+            candidate = WEB_DIST / full_path
+            if full_path and candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(WEB_DIST / "index.html")
+
+
+mount_frontend()
+
+
+def main() -> None:
+    import uvicorn
+
+    cfg = load_config().get("server", {})
+    host = cfg.get("host", "127.0.0.1")
+    port = int(cfg.get("port", 9470))
+    uvicorn.run("server.main:app", host=host, port=port, reload=False)
+
+
+if __name__ == "__main__":
+    main()

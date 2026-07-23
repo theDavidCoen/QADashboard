@@ -1,0 +1,39 @@
+server:
+  host: 127.0.0.1
+  port: 9470
+
+scrcpy:
+  server_jar: /usr/share/scrcpy/scrcpy-server
+  server_version: "4.1"
+  max_size: 1080
+  max_fps: 60
+  bit_rate: 16000000
+
+ios:
+  screenshot_fps: 8
+
+# Package IDs to probe for app version label (first match wins)
+apps:
+  edge:
+    label: Edge
+    android:
+      - co.edgesecure.app.staging
+      - co.edgesecure.app
+    ios:
+      - co.edgesecure.app.staging
+      - co.edgesecure.app
+  edge_develop:
+    label: Edge Develop
+    android:
+      - app.edge.develop
+    ios: []
+
+chrome:
+  android: com.android.chrome
+
+# Installed PWAs / WebAPKs — shown as name + URL when in foreground
+pwas:
+  - name: Arkade Wallet
+    hosts:
+      - arkade.money
+    url: https://arkade.money

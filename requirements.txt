@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+websockets>=14
+pyyaml>=6
+aiofiles>=24
+pymobiledevice3>=9.0
+cryptography>=42

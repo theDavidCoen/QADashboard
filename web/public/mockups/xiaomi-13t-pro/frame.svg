@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 843" fill="none">
+  <defs>
+    <linearGradient id="body" x1="200" y1="0" x2="200" y2="843" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a3a3c"/>
+      <stop offset="0.45" stop-color="#161618"/>
+      <stop offset="1" stop-color="#2c2c2e"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="421" x2="400" y2="421" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5a5a5e"/>
+      <stop offset="0.5" stop-color="#2a2a2c"/>
+      <stop offset="1" stop-color="#5a5a5e"/>
+    </linearGradient>
+    <mask id="screen-hole">
+      <rect width="400" height="843" fill="white"/>
+      <!-- Screen cutout: ~3.83% / 1.82% / 91.31% / 96.16% -->
+      <rect x="15.3" y="15.3" width="365.2" height="810.6" rx="26" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#screen-hole)">
+    <rect x="4" y="4" width="392" height="835" rx="42" fill="url(#body)"/>
+    <rect x="4" y="4" width="392" height="835" rx="42" fill="none" stroke="url(#rim)" stroke-width="2.5"/>
+    <!-- volume / power keys -->
+    <rect x="1" y="168" width="3.5" height="42" rx="1.5" fill="#3d3d40"/>
+    <rect x="1" y="220" width="3.5" height="42" rx="1.5" fill="#3d3d40"/>
+    <rect x="395.5" y="210" width="3.5" height="58" rx="1.5" fill="#3d3d40"/>
+  </g>
+  <!-- centered punch-hole camera -->
+  <circle cx="200" cy="36" r="9.5" fill="#050505"/>
+  <circle cx="200" cy="36" r="5" fill="#0a1218"/>
+</svg>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 870" fill="none">
+  <defs>
+    <linearGradient id="body" x1="200" y1="0" x2="200" y2="870" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a3a3c"/>
+      <stop offset="1" stop-color="#111"/>
+    </linearGradient>
+    <mask id="screen-hole">
+      <rect width="400" height="870" fill="white"/>
+      <rect x="22" y="26" width="356" height="818" rx="26" fill="black"/>
+    </mask>
+  </defs>
+  <g mask="url(#screen-hole)">
+    <rect x="8" y="8" width="384" height="854" rx="36" fill="url(#body)" stroke="#555" stroke-width="1"/>
+    <rect x="396" y="210" width="4" height="56" rx="2" fill="#444"/>
+  </g>
+  <circle cx="200" cy="44" r="6" fill="#050505"/>
+  <rect x="22" y="26" width="356" height="818" rx="26" fill="none" stroke="#000" stroke-opacity="0.4" stroke-width="1.5"/>
+</svg>

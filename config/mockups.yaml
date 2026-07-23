@@ -1,0 +1,26 @@
+# Device mockup mapping — add new devices here
+# Frame assets live in web/public/mockups/<id>/
+# Registry (screen coordinates): web/public/mockups/registry.json
+
+mockups:
+  iphone-8:
+    match:
+      - iPhone10,4
+      - iPhone 8
+      - iPhone8,1
+      - iPhone8,2
+  xiaomi-13t-pro:
+    match:
+      - 23078PND5G
+      - corot
+      - Xiaomi 13T Pro
+      - 13T Pro
+  redmi-note-9-pro:
+    match:
+      - Redmi Note 9 Pro
+      - joyeuse
+      - M2003J6B2G
+
+defaults:
+  android: generic-android
+  ios: generic-ios

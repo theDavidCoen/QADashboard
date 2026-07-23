@@ -1,0 +1,55 @@
+{
+  "mockups": {
+    "iphone-8": {
+      "label": "iPhone 8",
+      "frame": "/mockups/iphone-8/frame.png",
+      "frameType": "image",
+      "frameAspect": 0.488,
+      "screen": { "left": 7.08, "top": 12.81, "width": 86, "height": 74.66 },
+      "screenRadius": "0%",
+      "match": ["iPhone10,4", "iPhone 8", "iPhone8,1", "iPhone8,2", "iPhone8,4"]
+    },
+    "xiaomi-13t-pro": {
+      "label": "Xiaomi 13T Pro",
+      "frame": "/mockups/xiaomi-13t-pro/frame.png",
+      "frameType": "image",
+      "frameAspect": 0.4657,
+      "screen": { "left": 2.5, "top": 1.3, "width": 95.0, "height": 97.4 },
+      "screenRadius": "6.8%",
+      "match": ["23078PND5G", "corot", "Xiaomi 13T Pro", "13T Pro", "2210132C"]
+    },
+    "redmi-note-9-pro": {
+      "label": "Redmi Note 9 Pro",
+      "frame": "/mockups/redmi-note-9-pro/frame.svg",
+      "frameType": "svg",
+      "frameAspect": 0.46,
+      "screen": { "left": 5.75, "top": 3.45, "width": 88.5, "height": 93.22 },
+      "screenRadius": "6.8%",
+      "match": [
+        "Redmi Note 9 Pro",
+        "joyeuse",
+        "M2003J6B2G",
+        "Redmi Note 9 Pro Max",
+        "exynos9611"
+      ]
+    },
+    "generic-android": {
+      "label": "Android",
+      "frame": "/mockups/generic-android/frame.svg",
+      "frameType": "svg",
+      "frameAspect": 0.46,
+      "screen": { "left": 5.5, "top": 3, "width": 89, "height": 94 },
+      "screenRadius": "6%",
+      "match": []
+    },
+    "generic-ios": {
+      "label": "iPhone",
+      "frame": "/mockups/generic-ios/frame.svg",
+      "frameType": "svg",
+      "frameAspect": 0.488,
+      "screen": { "left": 4.5, "top": 9.8, "width": 91, "height": 79.3 },
+      "screenRadius": "0%",
+      "match": []
+    }
+  }
+}
