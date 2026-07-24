@@ -7,8 +7,14 @@ interface DeviceSlotProps {
   emptyLabel?: string;
   onRemove?: () => void;
   recording?: boolean;
+  /** When any device is recording, Esc stops Rec instead of sending BACK. */
+  recordingActive?: boolean;
   flash?: boolean;
   rebooting?: boolean;
+  focused?: boolean;
+  focusDimmed?: boolean;
+  onFocusHover?: () => void;
+  onFocusLock?: () => void;
   /** Enable drag handle when more than one device is connected. */
   canReorder?: boolean;
   dragging?: boolean;
@@ -70,8 +76,13 @@ export function DeviceSlot({
   emptyLabel = "Connect device",
   onRemove,
   recording = false,
+  recordingActive = false,
   flash = false,
   rebooting = false,
+  focused = false,
+  focusDimmed = false,
+  onFocusHover,
+  onFocusLock,
   canReorder = false,
   dragging = false,
   dropTarget = false,
@@ -105,6 +116,8 @@ export function DeviceSlot({
     "device-slot",
     "device-slot--active",
     recording ? "device-slot--recording" : "",
+    focused ? "device-slot--focused" : "",
+    focusDimmed ? "device-slot--focus-dimmed" : "",
     flash ? "device-slot--flash" : "",
     rebooting ? "device-slot--rebooting" : "",
     dragging ? "device-slot--dragging" : "",
@@ -116,6 +129,11 @@ export function DeviceSlot({
   return (
     <article
       className={slotClass}
+      onPointerEnter={onFocusHover}
+      onPointerDownCapture={(event) => {
+        if (event.button !== 0) return;
+        onFocusLock?.();
+      }}
       onDragOver={canReorder ? onDragOverSlot : undefined}
       onDragLeave={canReorder ? onDragLeaveSlot : undefined}
       onDrop={canReorder ? onDropSlot : undefined}
@@ -160,6 +178,7 @@ export function DeviceSlot({
           deviceId={device.id}
           platform={device.platform}
           mockupId={device.mockupId ?? "generic-android"}
+          recordingActive={recordingActive}
         />
         {flash ? <div className="device-slot__flash" aria-hidden="true" /> : null}
         {rebooting ? (

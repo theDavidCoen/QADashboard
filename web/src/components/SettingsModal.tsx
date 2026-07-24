@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   changeMasterPassword,
   deleteEdgeAccountVault,
@@ -16,19 +16,32 @@ interface SettingsModalProps {
   onClose: () => void;
   onSaved?: (settings: SettingsPayload) => void;
   deviceIds?: string[];
+  /** Current App values — avoid off→on flash before settings fetch completes. */
+  edgeFeaturesEnabled?: boolean;
+  arkadeFeaturesEnabled?: boolean;
+  soundEffectsEnabled?: boolean;
 }
 
 type SettingsSnapshot = {
   capturePath: string;
   vaultPath: string;
+  edgeFeaturesEnabled: boolean;
+  arkadeFeaturesEnabled: boolean;
+  soundEffectsEnabled: boolean;
   sidebarActions: Record<string, boolean>;
   customActions: CustomAdbAction[];
 };
+
+const EDGE_ACTION_IDS = new Set(["start_edge", "start_edge_account", "start_edge_develop"]);
+const ARKADE_ACTION_IDS = new Set(["start_arkade"]);
 
 function snapshotOf(parts: SettingsSnapshot): string {
   return JSON.stringify({
     capturePath: parts.capturePath.trim(),
     vaultPath: parts.vaultPath.trim(),
+    edgeFeaturesEnabled: parts.edgeFeaturesEnabled,
+    arkadeFeaturesEnabled: parts.arkadeFeaturesEnabled,
+    soundEffectsEnabled: parts.soundEffectsEnabled,
     sidebarActions: parts.sidebarActions,
     customActions: parts.customActions.map((item) => ({
       id: item.id,
@@ -67,7 +80,18 @@ function ToggleSwitch({
   );
 }
 
-export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProps) {
+function ToggleList({ children }: { children: ReactNode }) {
+  return <div className="settings-toggle-list">{children}</div>;
+}
+
+export function SettingsModal({
+  onClose,
+  onSaved,
+  deviceIds,
+  edgeFeaturesEnabled: edgeInit = false,
+  arkadeFeaturesEnabled: arkadeInit = false,
+  soundEffectsEnabled: soundInit = true,
+}: SettingsModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useDialogModal(dialogRef, onClose);
 
@@ -79,6 +103,9 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
 
   const [capturePath, setCapturePath] = useState("~/Immagini/Schermate");
   const [vaultPath, setVaultPath] = useState("~/.config/qa-dashboard/edge-accounts.vault");
+  const [edgeFeaturesEnabled, setEdgeFeaturesEnabled] = useState(edgeInit);
+  const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(arkadeInit);
+  const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(soundInit);
   const [sidebarActions, setSidebarActions] = useState<Record<string, boolean>>({});
   const [sidebarDefs, setSidebarDefs] = useState<SidebarActionDef[]>([]);
   const [customActions, setCustomActions] = useState<CustomAdbAction[]>([]);
@@ -102,20 +129,30 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
   const rememberBaseline = (
     nextCapture: string,
     nextVault: string,
+    nextEdge: boolean,
+    nextArkade: boolean,
+    nextSound: boolean,
     nextFlags: Record<string, boolean>,
     nextCustoms: CustomAdbAction[],
   ) => {
     baselineRef.current = snapshotOf({
       capturePath: nextCapture,
       vaultPath: nextVault,
+      edgeFeaturesEnabled: nextEdge,
+      arkadeFeaturesEnabled: nextArkade,
+      soundEffectsEnabled: nextSound,
       sidebarActions: nextFlags,
       customActions: nextCustoms,
     });
   };
 
   const applySettings = (payload: SettingsPayload, asBaseline = true) => {
+    const soundOn = payload.soundEffectsEnabled !== false;
     setCapturePath(payload.capturePath);
     setVaultPath(payload.vaultPath);
+    setEdgeFeaturesEnabled(payload.edgeFeaturesEnabled === true);
+    setArkadeFeaturesEnabled(payload.arkadeFeaturesEnabled === true);
+    setSoundEffectsEnabled(soundOn);
     setSidebarActions(payload.sidebarActions);
     setSidebarDefs(payload.sidebarActionDefs);
     setCustomActions(payload.customAdbActions);
@@ -135,6 +172,9 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
       rememberBaseline(
         payload.capturePath,
         payload.vaultPath,
+        payload.edgeFeaturesEnabled === true,
+        payload.arkadeFeaturesEnabled === true,
+        soundOn,
         payload.sidebarActions,
         payload.customAdbActions,
       );
@@ -146,6 +186,9 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
     const current = snapshotOf({
       capturePath,
       vaultPath,
+      edgeFeaturesEnabled,
+      arkadeFeaturesEnabled,
+      soundEffectsEnabled,
       sidebarActions,
       customActions,
     });
@@ -156,6 +199,9 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
     ready,
     capturePath,
     vaultPath,
+    edgeFeaturesEnabled,
+    arkadeFeaturesEnabled,
+    soundEffectsEnabled,
     sidebarActions,
     customActions,
     newMaster,
@@ -211,6 +257,9 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
       const payload = await saveSettings({
         capturePath: capturePath.trim(),
         vaultPath: vaultPath.trim(),
+        edgeFeaturesEnabled,
+        arkadeFeaturesEnabled,
+        soundEffectsEnabled,
         sidebarActions,
         customAdbActions: customActions,
       });
@@ -317,9 +366,13 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
   };
 
   const groups = sidebarDefs.reduce<Record<string, SidebarActionDef[]>>((acc, def) => {
+    if (EDGE_ACTION_IDS.has(def.id) || ARKADE_ACTION_IDS.has(def.id)) return acc;
     (acc[def.group] ??= []).push(def);
     return acc;
   }, {});
+
+  const edgeActionDefs = sidebarDefs.filter((def) => EDGE_ACTION_IDS.has(def.id));
+  const arkadeActionDefs = sidebarDefs.filter((def) => ARKADE_ACTION_IDS.has(def.id));
 
   return (
     <dialog ref={dialogRef} className="device-picker settings-modal" onClose={onClose}>
@@ -340,8 +393,8 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
 
           <div className="settings-sections">
             <section className="settings-section">
-              <h4>Captures</h4>
-              <p className="picker-empty">Screenshot and video folder on this PC.</p>
+              <h4>General</h4>
+              <p className="picker-empty">Workspace feedback and where captures are saved.</p>
               <label className="modal-field">
                 <span className="modal-field__label">Capture path</span>
                 <input
@@ -352,236 +405,356 @@ export function SettingsModal({ onClose, onSaved, deviceIds }: SettingsModalProp
                   disabled={saving}
                 />
               </label>
-            </section>
-
-            <section className="settings-section">
-              <h4>Edge accounts (encrypted)</h4>
-              <p className="picker-empty">
-                Usernames only — passwords/PINs never shown. PIN is used for local re-login.
-                {vaultEncryption ? ` ${vaultEncryption}` : ""}
-              </p>
-              {hasMasterPassword && !vaultUnlocked ? (
-                <div className="settings-inline">
-                  <input
-                    className="modal-input"
-                    type="password"
-                    placeholder="Master password to unlock"
-                    value={unlockPassword}
-                    onChange={(event) => setUnlockPassword(event.target.value)}
-                    disabled={saving}
-                  />
-                  <button
-                    type="button"
-                    className="modal-btn modal-btn--primary"
-                    onClick={() => void doUnlock()}
-                    disabled={saving || !unlockPassword}
-                  >
-                    Unlock
-                  </button>
-                </div>
-              ) : null}
-              <ul className="picker-list settings-account-list">
-                {accounts.length === 0 ? (
-                  <li className="picker-empty">No saved accounts</li>
-                ) : (
-                  accounts.map((account) => (
-                    <li key={account.username} className="edge-account-row">
-                      <div className="picker-item airplane-target picker-item--static">
-                        <span className="picker-item__row">
-                          <span className="picker-item__name">{account.username}</span>
-                        </span>
-                        <span className="picker-item__detail">
-                          {[
-                            account.hasPassword ? "password" : null,
-                            account.hasPin ? "PIN" : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "Saved locally"}{" "}
-                          · encrypted
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        className="edge-account-remove"
-                        disabled={saving}
-                        title="Remove from vault and forget on connected devices"
-                        onClick={() => void removeAccount(account.username)}
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))
-                )}
-              </ul>
-              <div className="settings-inline settings-inline--stack">
-                <input
-                  className="modal-input"
-                  placeholder="Username"
-                  value={newUser}
-                  onChange={(event) => setNewUser(event.target.value)}
-                  autoComplete="off"
-                  disabled={saving}
+              <ToggleList>
+                <ToggleSwitch
+                  label="Sound effects"
+                  checked={soundEffectsEnabled}
+                  disabled={saving || !ready}
+                  onChange={setSoundEffectsEnabled}
                 />
-                <input
-                  className="modal-input"
-                  type="password"
-                  placeholder="Password (optional if PIN set)"
-                  value={newPass}
-                  onChange={(event) => setNewPass(event.target.value)}
-                  autoComplete="off"
-                  disabled={saving}
-                />
-                <input
-                  className="modal-input"
-                  type="password"
-                  inputMode="numeric"
-                  placeholder="PIN 4–8 digits (for local re-login)"
-                  value={newPin}
-                  onChange={(event) => setNewPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
-                  autoComplete="off"
-                  disabled={saving}
-                />
-                <button
-                  type="button"
-                  className="modal-btn modal-btn--primary"
-                  disabled={
-                    saving ||
-                    !newUser.trim() ||
-                    (!newPass && !/^\d{4,8}$/.test(newPin.trim()))
-                  }
-                  onClick={() => void addAccount()}
-                >
-                  Add account
-                </button>
-              </div>
-            </section>
-
-            <section className="settings-section">
-              <h4>Encrypted archive</h4>
-              <label className="modal-field">
-                <span className="modal-field__label">Vault path</span>
-                <input
-                  className="modal-input"
-                  value={vaultPath}
-                  onChange={(event) => setVaultPath(event.target.value)}
-                  spellCheck={false}
-                  disabled={saving}
-                />
-              </label>
-              <p className="modal-field__label">Master password</p>
-              {hasMasterPassword ? (
-                <label className="modal-field">
-                  <span className="modal-field__label">Current</span>
-                  <input
-                    className="modal-input"
-                    type="password"
-                    value={currentMaster}
-                    onChange={(event) => setCurrentMaster(event.target.value)}
-                    disabled={saving}
-                  />
-                </label>
-              ) : null}
-              <label className="modal-field">
-                <span className="modal-field__label">
-                  {hasMasterPassword ? "New (leave empty to clear)" : "Set master password"}
-                </span>
-                <input
-                  className="modal-input"
-                  type="password"
-                  value={newMaster}
-                  onChange={(event) => setNewMaster(event.target.value)}
-                  disabled={saving}
-                />
-              </label>
-              <label className="modal-field">
-                <span className="modal-field__label">Confirm new</span>
-                <input
-                  className="modal-input"
-                  type="password"
-                  value={confirmMaster}
-                  onChange={(event) => setConfirmMaster(event.target.value)}
-                  disabled={saving}
-                />
-              </label>
-              <p className="picker-empty">Use Save settings to apply path and master password changes.</p>
-            </section>
-
-            <section className="settings-section">
-              <h4>Custom ADB actions</h4>
-              <p className="picker-empty">
-                Args after device serial, e.g. <code>shell pm clear co.edgesecure.app</code>
-              </p>
-              <ul className="picker-list settings-account-list">
-                {customActions.map((action) => (
-                  <li key={action.id} className="edge-account-row">
-                    <div className="picker-item airplane-target picker-item--static">
-                      <span className="picker-item__name">{action.label}</span>
-                      <span className="picker-item__detail">{action.args}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="edge-account-remove"
-                      onClick={() => removeCustomAction(action.id)}
-                      disabled={saving}
-                    >
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <div className="settings-inline settings-inline--stack">
-                <input
-                  className="modal-input"
-                  placeholder="Label"
-                  value={customLabel}
-                  onChange={(event) => setCustomLabel(event.target.value)}
-                  disabled={saving}
-                />
-                <input
-                  className="modal-input"
-                  placeholder="shell …"
-                  value={customArgs}
-                  onChange={(event) => setCustomArgs(event.target.value)}
-                  spellCheck={false}
-                  disabled={saving}
-                />
-                <button
-                  type="button"
-                  className="modal-btn"
-                  disabled={!customLabel.trim() || !customArgs.trim()}
-                  onClick={addCustomAction}
-                >
-                  Add action
-                </button>
-              </div>
+              </ToggleList>
+              <p className="settings-hint">Focus Mode, Rec, and screenshot sounds.</p>
             </section>
 
             <section className="settings-section">
               <h4>Sidebar actions</h4>
-              <p className="picker-empty">Toggle which actions appear in the left sidebar.</p>
+              <p className="picker-empty">Choose which buttons appear in the left sidebar.</p>
               {Object.keys(groups).length === 0 ? (
                 <p className="picker-empty">Loading action list…</p>
               ) : (
                 Object.entries(groups).map(([group, defs]) => (
                   <div key={group} className="settings-flags-group">
-                    <p className="modal-field__label">{group}</p>
-                    {defs.map((def) => (
-                      <ToggleSwitch
-                        key={def.id}
-                        label={def.label}
-                        checked={sidebarActions[def.id] !== false}
-                        disabled={saving}
-                        onChange={(next) =>
-                          setSidebarActions((prev) => ({
-                            ...prev,
-                            [def.id]: next,
-                          }))
-                        }
-                      />
-                    ))}
+                    <p className="settings-group-label">{group}</p>
+                    <ToggleList>
+                      {defs.map((def) => (
+                        <ToggleSwitch
+                          key={def.id}
+                          label={def.label}
+                          checked={sidebarActions[def.id] !== false}
+                          disabled={saving}
+                          onChange={(next) =>
+                            setSidebarActions((prev) => ({
+                              ...prev,
+                              [def.id]: next,
+                            }))
+                          }
+                        />
+                      ))}
+                    </ToggleList>
                   </div>
                 ))
               )}
+
+              <div className="settings-flags-group">
+                <p className="settings-group-label">Custom ADB</p>
+                <p className="picker-empty" style={{ marginBottom: "0.55rem" }}>
+                  Args after device serial, e.g. <code>shell pm clear co.edgesecure.app</code>
+                </p>
+                <ul className="picker-list settings-row-list">
+                  {customActions.length === 0 ? (
+                    <li className="picker-empty settings-row-list__empty">No custom actions yet</li>
+                  ) : (
+                    customActions.map((action) => (
+                      <li key={action.id} className="settings-row">
+                        <div className="settings-row__main">
+                          <span className="settings-row__title">{action.label}</span>
+                          <span className="settings-row__meta">{action.args}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="edge-account-remove"
+                          onClick={() => removeCustomAction(action.id)}
+                          disabled={saving}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+                <div className="settings-inline settings-inline--stack">
+                  <input
+                    className="modal-input"
+                    placeholder="Label"
+                    value={customLabel}
+                    onChange={(event) => setCustomLabel(event.target.value)}
+                    disabled={saving}
+                  />
+                  <input
+                    className="modal-input"
+                    placeholder="shell …"
+                    value={customArgs}
+                    onChange={(event) => setCustomArgs(event.target.value)}
+                    spellCheck={false}
+                    disabled={saving}
+                  />
+                  <button
+                    type="button"
+                    className="modal-btn"
+                    disabled={!customLabel.trim() || !customArgs.trim()}
+                    onClick={addCustomAction}
+                  >
+                    Add action
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="settings-section settings-section--edge">
+              <details className="settings-dropdown">
+                <summary className="settings-dropdown__summary">
+                  <span>Edge</span>
+                  <span className="settings-dropdown__hint">
+                    {edgeFeaturesEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </summary>
+                <div className="settings-dropdown__body">
+                  {!ready ? (
+                    <p className="picker-empty">Loading…</p>
+                  ) : (
+                    <>
+                      <p className="picker-empty">
+                        Turn off for non-Edge QA so Start Edge / vault stay hidden.
+                      </p>
+                      <ToggleList>
+                        <ToggleSwitch
+                          label="Enable Edge actions & vault"
+                          checked={edgeFeaturesEnabled}
+                          disabled={saving}
+                          onChange={setEdgeFeaturesEnabled}
+                        />
+                      </ToggleList>
+
+                      {edgeFeaturesEnabled ? (
+                        <>
+                          <p className="settings-group-label">Sidebar Edge actions</p>
+                          <ToggleList>
+                            {edgeActionDefs.map((def) => (
+                              <ToggleSwitch
+                                key={def.id}
+                                label={def.label}
+                                checked={sidebarActions[def.id] !== false}
+                                disabled={saving}
+                                onChange={(next) =>
+                                  setSidebarActions((prev) => ({
+                                    ...prev,
+                                    [def.id]: next,
+                                  }))
+                                }
+                              />
+                            ))}
+                          </ToggleList>
+
+                          <h5 className="settings-subheading">Encrypted accounts</h5>
+                          <p className="picker-empty">
+                            Usernames only — passwords/PINs never shown.
+                            {vaultEncryption ? ` ${vaultEncryption}` : ""}
+                          </p>
+                          {hasMasterPassword && !vaultUnlocked ? (
+                            <div className="settings-inline">
+                              <input
+                                className="modal-input"
+                                type="password"
+                                placeholder="Master password to unlock"
+                                value={unlockPassword}
+                                onChange={(event) => setUnlockPassword(event.target.value)}
+                                disabled={saving}
+                              />
+                              <button
+                                type="button"
+                                className="modal-btn modal-btn--primary"
+                                onClick={() => void doUnlock()}
+                                disabled={saving || !unlockPassword}
+                              >
+                                Unlock
+                              </button>
+                            </div>
+                          ) : null}
+                          <ul className="picker-list settings-row-list">
+                            {accounts.length === 0 ? (
+                              <li className="picker-empty settings-row-list__empty">No saved accounts</li>
+                            ) : (
+                              accounts.map((account) => (
+                                <li key={account.username} className="settings-row">
+                                  <div className="settings-row__main">
+                                    <span className="settings-row__title">{account.username}</span>
+                                    <span className="settings-row__meta">
+                                      {[
+                                        account.hasPassword ? "password" : null,
+                                        account.hasPin ? "PIN" : null,
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ") || "Saved locally"}{" "}
+                                      · encrypted
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="edge-account-remove"
+                                    disabled={saving}
+                                    title="Remove from vault and forget on connected devices"
+                                    onClick={() => void removeAccount(account.username)}
+                                  >
+                                    Remove
+                                  </button>
+                                </li>
+                              ))
+                            )}
+                          </ul>
+                          <div className="settings-inline settings-inline--stack">
+                            <input
+                              className="modal-input"
+                              placeholder="Username"
+                              value={newUser}
+                              onChange={(event) => setNewUser(event.target.value)}
+                              autoComplete="off"
+                              disabled={saving}
+                            />
+                            <input
+                              className="modal-input"
+                              type="password"
+                              placeholder="Password (optional if PIN set)"
+                              value={newPass}
+                              onChange={(event) => setNewPass(event.target.value)}
+                              autoComplete="off"
+                              disabled={saving}
+                            />
+                            <input
+                              className="modal-input"
+                              type="password"
+                              inputMode="numeric"
+                              placeholder="PIN 4–8 digits (for local re-login)"
+                              value={newPin}
+                              onChange={(event) =>
+                                setNewPin(event.target.value.replace(/\D/g, "").slice(0, 8))
+                              }
+                              autoComplete="off"
+                              disabled={saving}
+                            />
+                            <button
+                              type="button"
+                              className="modal-btn modal-btn--primary"
+                              disabled={
+                                saving ||
+                                !newUser.trim() ||
+                                (!newPass && !/^\d{4,8}$/.test(newPin.trim()))
+                              }
+                              onClick={() => void addAccount()}
+                            >
+                              Add account
+                            </button>
+                          </div>
+
+                          <h5 className="settings-subheading">Vault archive</h5>
+                          <label className="modal-field">
+                            <span className="modal-field__label">Vault path</span>
+                            <input
+                              className="modal-input"
+                              value={vaultPath}
+                              onChange={(event) => setVaultPath(event.target.value)}
+                              spellCheck={false}
+                              disabled={saving}
+                            />
+                          </label>
+                          <p className="modal-field__label">Master password</p>
+                          {hasMasterPassword ? (
+                            <label className="modal-field">
+                              <span className="modal-field__label">Current</span>
+                              <input
+                                className="modal-input"
+                                type="password"
+                                value={currentMaster}
+                                onChange={(event) => setCurrentMaster(event.target.value)}
+                                disabled={saving}
+                              />
+                            </label>
+                          ) : null}
+                          <label className="modal-field">
+                            <span className="modal-field__label">
+                              {hasMasterPassword ? "New (leave empty to clear)" : "Set master password"}
+                            </span>
+                            <input
+                              className="modal-input"
+                              type="password"
+                              value={newMaster}
+                              onChange={(event) => setNewMaster(event.target.value)}
+                              disabled={saving}
+                            />
+                          </label>
+                          <label className="modal-field">
+                            <span className="modal-field__label">Confirm new</span>
+                            <input
+                              className="modal-input"
+                              type="password"
+                              value={confirmMaster}
+                              onChange={(event) => setConfirmMaster(event.target.value)}
+                              disabled={saving}
+                            />
+                          </label>
+                          <p className="picker-empty">
+                            Use Save settings to apply path and master password changes.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="picker-empty" style={{ marginTop: "0.65rem" }}>
+                          Edge Launch buttons and the credential vault are hidden in the dashboard.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </details>
+            </section>
+
+            <section className="settings-section settings-section--arkade">
+              <details className="settings-dropdown">
+                <summary className="settings-dropdown__summary">
+                  <span>Arkade</span>
+                  <span className="settings-dropdown__hint">
+                    {arkadeFeaturesEnabled ? "Enabled" : "Disabled"}
+                  </span>
+                </summary>
+                <div className="settings-dropdown__body">
+                  {!ready ? (
+                    <p className="picker-empty">Loading…</p>
+                  ) : (
+                    <>
+                      <p className="picker-empty">
+                        Turn off for non-Arkade QA so Start Arkade stays hidden.
+                      </p>
+                      <ToggleList>
+                        <ToggleSwitch
+                          label="Enable Arkade actions"
+                          checked={arkadeFeaturesEnabled}
+                          disabled={saving}
+                          onChange={setArkadeFeaturesEnabled}
+                        />
+                        {arkadeFeaturesEnabled
+                          ? arkadeActionDefs.map((def) => (
+                              <ToggleSwitch
+                                key={def.id}
+                                label={def.label}
+                                checked={sidebarActions[def.id] !== false}
+                                disabled={saving}
+                                onChange={(next) =>
+                                  setSidebarActions((prev) => ({
+                                    ...prev,
+                                    [def.id]: next,
+                                  }))
+                                }
+                              />
+                            ))
+                          : null}
+                      </ToggleList>
+                      {!arkadeFeaturesEnabled ? (
+                        <p className="picker-empty" style={{ marginTop: "0.65rem" }}>
+                          Start Arkade is hidden in the dashboard.
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              </details>
             </section>
           </div>
         </div>

@@ -1088,14 +1088,11 @@ def kill_foreground_app(device: DeviceInfo) -> ActionResult:
 
 
 def run_start_package(
-    device_id: str,
     package: str,
     activity: str | None = None,
+    device_ids: list[str] | None = None,
 ) -> list[ActionResult]:
-    devices = _resolve_targets([device_id])
-    if not devices:
-        return [ActionResult(device_id, device_id, False, "Device not found")]
-    return [start_package_on_device(devices[0], package, activity)]
+    return [start_package_on_device(d, package, activity) for d in _resolve_targets(device_ids)]
 
 
 def run_kill_background(device_ids: list[str] | None = None) -> list[ActionResult]:
@@ -1119,12 +1116,12 @@ async def list_launchable_apps_async(device_id: str) -> list[LaunchableApp]:
 
 
 async def start_package_async(
-    device_id: str,
     package: str,
     activity: str | None = None,
+    device_ids: list[str] | None = None,
 ) -> list[ActionResult]:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, run_start_package, device_id, package, activity)
+    return await loop.run_in_executor(None, run_start_package, package, activity, device_ids)
 
 
 async def kill_background_async(device_ids: list[str] | None = None) -> list[ActionResult]:

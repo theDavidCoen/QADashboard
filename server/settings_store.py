@@ -47,6 +47,9 @@ def _defaults() -> dict:
     return {
         "capturePath": DEFAULT_CAPTURE_PATH,
         "vaultPath": DEFAULT_VAULT_PATH,
+        "edgeFeaturesEnabled": True,
+        "arkadeFeaturesEnabled": True,
+        "soundEffectsEnabled": True,
         "sidebarActions": _default_sidebar_flags(),
         "customAdbActions": [],
     }
@@ -60,6 +63,13 @@ def _normalize(data: dict) -> dict:
     vault = data.get("vaultPath")
     if isinstance(vault, str) and vault.strip():
         base["vaultPath"] = str(Path(vault.strip()).expanduser())
+
+    if "edgeFeaturesEnabled" in data:
+        base["edgeFeaturesEnabled"] = bool(data["edgeFeaturesEnabled"])
+    if "arkadeFeaturesEnabled" in data:
+        base["arkadeFeaturesEnabled"] = bool(data["arkadeFeaturesEnabled"])
+    if "soundEffectsEnabled" in data:
+        base["soundEffectsEnabled"] = bool(data["soundEffectsEnabled"])
 
     flags = _default_sidebar_flags()
     raw_flags = data.get("sidebarActions")
@@ -103,6 +113,12 @@ def save_settings(patch: dict) -> dict:
         merged["capturePath"] = patch["capturePath"]
     if "vaultPath" in patch and isinstance(patch["vaultPath"], str):
         merged["vaultPath"] = patch["vaultPath"]
+    if "edgeFeaturesEnabled" in patch:
+        merged["edgeFeaturesEnabled"] = bool(patch["edgeFeaturesEnabled"])
+    if "arkadeFeaturesEnabled" in patch:
+        merged["arkadeFeaturesEnabled"] = bool(patch["arkadeFeaturesEnabled"])
+    if "soundEffectsEnabled" in patch:
+        merged["soundEffectsEnabled"] = bool(patch["soundEffectsEnabled"])
     if "sidebarActions" in patch and isinstance(patch["sidebarActions"], dict):
         merged["sidebarActions"] = {
             **merged.get("sidebarActions", {}),
@@ -118,6 +134,13 @@ def save_settings(patch: dict) -> dict:
     tmp.replace(SETTINGS_PATH)
     os.chmod(SETTINGS_PATH, 0o600)
     return normalized
+
+
+EDGE_SIDEBAR_ACTION_IDS = frozenset(
+    {"start_edge", "start_edge_account", "start_edge_develop"},
+)
+
+ARKADE_SIDEBAR_ACTION_IDS = frozenset({"start_arkade"})
 
 
 def expand_path(value: str) -> Path:

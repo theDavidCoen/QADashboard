@@ -20,6 +20,44 @@ interface DeviceStreamProps {
   deviceId: string;
   platform: Platform;
   mockupId: string;
+  /** When true, Esc is reserved for stop-and-save (handled in App). */
+  recordingActive?: boolean;
+}
+
+/** Which device currently receives PC keyboard input (hover or last click). */
+let keyboardTargetId: string | null = null;
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) {
+    return true;
+  }
+  // Only block when focus is inside an open dialog form field, not any dialog ancestor of body.
+  return Boolean(target.closest("dialog input, dialog textarea, dialog select, [contenteditable='true']"));
+}
+
+function armKeyboard(deviceId: string, stream: HTMLElement, statusEl: HTMLElement | null) {
+  keyboardTargetId = deviceId;
+  stream.classList.add("is-keyboard-hot");
+  // Focus after the current pointer event so preventDefault cannot cancel it.
+  window.requestAnimationFrame(() => {
+    if (keyboardTargetId === deviceId) {
+      stream.focus({ preventScroll: true });
+    }
+  });
+  if (statusEl?.textContent?.startsWith("Live")) {
+    statusEl.textContent = "Live · keyboard active";
+  }
+}
+
+function disarmKeyboard(deviceId: string, stream: HTMLElement, statusEl: HTMLElement | null) {
+  if (keyboardTargetId !== deviceId) return;
+  keyboardTargetId = null;
+  stream.classList.remove("is-keyboard-hot");
+  if (statusEl?.textContent?.startsWith("Live")) {
+    statusEl.textContent = "Live · hover or click for keyboard";
+  }
 }
 
 function wsUrl(deviceId: string): string {
@@ -27,7 +65,7 @@ function wsUrl(deviceId: string): string {
   return `${protocol}://${window.location.host}/ws/stream/${encodeURIComponent(deviceId)}`;
 }
 
-export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps) {
+export function DeviceStream({ deviceId, platform, mockupId, recordingActive = false }: DeviceStreamProps) {
   const streamRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -36,6 +74,8 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
   const videoSizeRef = useRef({ width: 0, height: 0 });
   const draggingRef = useRef(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
+  const recordingActiveRef = useRef(recordingActive);
+  recordingActiveRef.current = recordingActive;
 
   useEffect(() => {
     if (platform !== "android") return;
@@ -100,7 +140,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
             ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
           }
           frame.close();
-          setStatus("Live · click to control");
+          setStatus("Live · hover or click for keyboard");
         },
         error(err) {
           setStatus(`Decoder: ${err.message}`);
@@ -138,7 +178,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
-      stream.focus();
+      armKeyboard(deviceId, stream, status);
       stream.setPointerCapture(event.pointerId);
       draggingRef.current = true;
       sendTouch(ACTION_DOWN, event.clientX, event.clientY);
@@ -158,11 +198,36 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
       if (stream.hasPointerCapture(event.pointerId)) {
         stream.releasePointerCapture(event.pointerId);
       }
+      armKeyboard(deviceId, stream, status);
       event.preventDefault();
     };
 
+    const onPointerEnter = () => {
+      armKeyboard(deviceId, stream, status);
+    };
+
+    const onPointerLeave = (event: PointerEvent) => {
+      // setPointerCapture often synthesizes leave — keep keyboard armed while dragging/captured.
+      if (draggingRef.current || stream.hasPointerCapture(event.pointerId)) return;
+      if (document.activeElement === stream) return;
+      disarmKeyboard(deviceId, stream, status);
+    };
+
+    const onBlur = () => {
+      // Keep armed while pointer is still over the stream.
+      if (stream.matches(":hover")) return;
+      disarmKeyboard(deviceId, stream, status);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Backspace" || event.key === "Escape") {
+      if (keyboardTargetId !== deviceId) return;
+      if (isEditableTarget(event.target)) return;
+
+      if (event.key === "Escape") {
+        if (event.defaultPrevented) return;
+        // Esc → BACK only while the pointer is on this stream; otherwise App
+        // handles Focus Mode exit / Rec stop-and-save.
+        if (recordingActiveRef.current || !stream.matches(":hover")) return;
         sendKey(KEYCODE_BACK);
         event.preventDefault();
         return;
@@ -182,7 +247,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
         event.preventDefault();
         return;
       }
-      if (event.key === "Delete") {
+      if (event.key === "Backspace" || event.key === "Delete") {
         sendKey(KEYCODE_DEL);
         event.preventDefault();
         return;
@@ -251,15 +316,23 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
     stream.addEventListener("pointermove", onPointerMove);
     stream.addEventListener("pointerup", onPointerUp);
     stream.addEventListener("pointercancel", onPointerUp);
-    stream.addEventListener("keydown", onKeyDown);
+    stream.addEventListener("pointerenter", onPointerEnter);
+    stream.addEventListener("pointerleave", onPointerLeave);
+    stream.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKeyDown, true);
 
     return () => {
       closed = true;
+      if (keyboardTargetId === deviceId) keyboardTargetId = null;
       stream.removeEventListener("pointerdown", onPointerDown);
       stream.removeEventListener("pointermove", onPointerMove);
       stream.removeEventListener("pointerup", onPointerUp);
       stream.removeEventListener("pointercancel", onPointerUp);
-      stream.removeEventListener("keydown", onKeyDown);
+      stream.removeEventListener("pointerenter", onPointerEnter);
+      stream.removeEventListener("pointerleave", onPointerLeave);
+      stream.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKeyDown, true);
+      stream.classList.remove("is-keyboard-hot");
       socket.close();
       socketRef.current = null;
       if (decoder && decoder.state !== "closed") {
@@ -299,7 +372,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
-      stream.focus();
+      armKeyboard(deviceId, stream, status);
       stream.setPointerCapture(event.pointerId);
       draggingRef.current = true;
       const point = mapPoint(event.clientX, event.clientY);
@@ -333,11 +406,37 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
       if (stream.hasPointerCapture(event.pointerId)) {
         stream.releasePointerCapture(event.pointerId);
       }
+      armKeyboard(deviceId, stream, status);
       event.preventDefault();
     };
 
+    const onPointerEnter = () => {
+      armKeyboard(deviceId, stream, status);
+    };
+
+    const onPointerLeave = (event: PointerEvent) => {
+      if (draggingRef.current || stream.hasPointerCapture(event.pointerId)) return;
+      if (document.activeElement === stream) return;
+      disarmKeyboard(deviceId, stream, status);
+    };
+
+    const onBlur = () => {
+      if (stream.matches(":hover")) return;
+      disarmKeyboard(deviceId, stream, status);
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Home" || event.key === "Escape") {
+      if (keyboardTargetId !== deviceId) return;
+      if (isEditableTarget(event.target)) return;
+
+      if (event.key === "Escape") {
+        if (event.defaultPrevented) return;
+        if (recordingActiveRef.current || !stream.matches(":hover")) return;
+        sendControl({ type: "key", action: 0, keycode: KEYCODE_HOME });
+        event.preventDefault();
+        return;
+      }
+      if (event.key === "Home") {
         sendControl({ type: "key", action: 0, keycode: KEYCODE_HOME });
         event.preventDefault();
         return;
@@ -347,7 +446,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
         event.preventDefault();
         return;
       }
-      if (event.key === "Backspace") {
+      if (event.key === "Backspace" || event.key === "Delete") {
         sendControl({ type: "text", text: "\b" });
         event.preventDefault();
         return;
@@ -404,7 +503,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
         img.src = objectUrl;
         img.hidden = false;
         canvas.hidden = true;
-        status.textContent = "Live · click to control";
+        status.textContent = "Live · hover or click for keyboard";
         return;
       }
       try {
@@ -428,15 +527,23 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
     stream.addEventListener("pointermove", onPointerMove);
     stream.addEventListener("pointerup", onPointerUp);
     stream.addEventListener("pointercancel", onPointerUp);
-    stream.addEventListener("keydown", onKeyDown);
+    stream.addEventListener("pointerenter", onPointerEnter);
+    stream.addEventListener("pointerleave", onPointerLeave);
+    stream.addEventListener("blur", onBlur);
+    window.addEventListener("keydown", onKeyDown, true);
 
     return () => {
       closed = true;
+      if (keyboardTargetId === deviceId) keyboardTargetId = null;
       stream.removeEventListener("pointerdown", onPointerDown);
       stream.removeEventListener("pointermove", onPointerMove);
       stream.removeEventListener("pointerup", onPointerUp);
       stream.removeEventListener("pointercancel", onPointerUp);
-      stream.removeEventListener("keydown", onKeyDown);
+      stream.removeEventListener("pointerenter", onPointerEnter);
+      stream.removeEventListener("pointerleave", onPointerLeave);
+      stream.removeEventListener("blur", onBlur);
+      window.removeEventListener("keydown", onKeyDown, true);
+      stream.classList.remove("is-keyboard-hot");
       socket.close();
       socketRef.current = null;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -450,7 +557,7 @@ export function DeviceStream({ deviceId, platform, mockupId }: DeviceStreamProps
           ref={streamRef}
           className="device-stream"
           tabIndex={0}
-          aria-label="Device screen — click to interact"
+          aria-label="Device screen — hover or click to type, click to touch"
         >
           <canvas ref={canvasRef} className="stream-canvas" hidden={platform === "ios"} />
           <img ref={imgRef} className="stream-image" alt="" hidden={platform !== "ios"} />

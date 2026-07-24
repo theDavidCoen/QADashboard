@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { listLaunchableApps, type LaunchableApp } from "../api/actions";
 import { useDialogModal } from "../hooks/useDialogModal";
 import type { DeviceInfo } from "../types";
 
+type Target = "all" | string;
+
 interface StartOtherAppModalProps {
   devices: DeviceInfo[];
   busy?: boolean;
-  onConfirm: (deviceId: string, app: LaunchableApp) => void;
+  onConfirm: (deviceIds: string[] | undefined, app: LaunchableApp) => void;
   onClose: () => void;
 }
 
@@ -24,16 +26,14 @@ export function StartOtherAppModal({
     [devices],
   );
   const [step, setStep] = useState<"device" | "app">("device");
-  const [deviceId, setDeviceId] = useState(android[0]?.id ?? "");
+  const [target, setTarget] = useState<Target>("all");
   const [apps, setApps] = useState<LaunchableApp[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
   const [appsError, setAppsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!deviceId && android[0]) setDeviceId(android[0].id);
-  }, [android, deviceId]);
+  const appsSourceId = target === "all" ? android[0]?.id ?? "" : target;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -46,14 +46,15 @@ export function StartOtherAppModal({
 
   const selected = filtered.find((app) => app.package === selectedPackage) ?? null;
 
-  const loadApps = async (id: string) => {
+  const loadApps = async () => {
+    if (!appsSourceId) return;
     setLoadingApps(true);
     setAppsError(null);
     setApps([]);
     setSelectedPackage(null);
     setQuery("");
     try {
-      const payload = await listLaunchableApps(id);
+      const payload = await listLaunchableApps(appsSourceId);
       setApps(payload.apps);
       setStep("app");
     } catch (error) {
@@ -62,6 +63,13 @@ export function StartOtherAppModal({
       setLoadingApps(false);
     }
   };
+
+  const appsHeading =
+    target === "all"
+      ? `Apps (from ${android[0]?.name ?? "device"} · start on all)`
+      : `Apps on ${android.find((d) => d.id === target)?.name ?? "device"}`;
+
+  const confirmIds = target === "all" ? undefined : [target];
 
   return (
     <dialog ref={dialogRef} className="device-picker" onClose={onClose}>
@@ -78,19 +86,36 @@ export function StartOtherAppModal({
         ) : step === "device" ? (
           <>
             <p className="picker-empty" style={{ marginBottom: "0.85rem" }}>
-              Choose a device, then pick an installed launcher app.
+              Choose a target, then pick an installed launcher app.
             </p>
             <ul className="picker-list airplane-targets">
+              <li>
+                <label
+                  className={`picker-item airplane-target ${target === "all" ? "is-selected" : ""}`}
+                >
+                  <input
+                    type="radio"
+                    name="start-app-device"
+                    checked={target === "all"}
+                    onChange={() => setTarget("all")}
+                    disabled={busy || loadingApps}
+                  />
+                  <span className="picker-item__row">
+                    <span className="picker-item__name">All Devices</span>
+                    <span className="picker-item__detail">{android.length}</span>
+                  </span>
+                </label>
+              </li>
               {android.map((device) => (
                 <li key={device.id}>
                   <label
-                    className={`picker-item airplane-target ${deviceId === device.id ? "is-selected" : ""}`}
+                    className={`picker-item airplane-target ${target === device.id ? "is-selected" : ""}`}
                   >
                     <input
                       type="radio"
                       name="start-app-device"
-                      checked={deviceId === device.id}
-                      onChange={() => setDeviceId(device.id)}
+                      checked={target === device.id}
+                      onChange={() => setTarget(device.id)}
                       disabled={busy || loadingApps}
                     />
                     <span className="picker-item__row">
@@ -109,8 +134,8 @@ export function StartOtherAppModal({
               <button
                 type="button"
                 className="modal-btn modal-btn--primary"
-                disabled={!deviceId || loadingApps}
-                onClick={() => loadApps(deviceId)}
+                disabled={!appsSourceId || loadingApps}
+                onClick={() => loadApps()}
               >
                 {loadingApps ? "Loading apps…" : "Next"}
               </button>
@@ -119,7 +144,7 @@ export function StartOtherAppModal({
         ) : (
           <>
             <p className="modal-field__label" style={{ marginBottom: "0.45rem" }}>
-              Apps on {android.find((d) => d.id === deviceId)?.name ?? "device"}
+              {appsHeading}
             </p>
             <input
               className="modal-input"
@@ -168,7 +193,7 @@ export function StartOtherAppModal({
                 type="button"
                 className="modal-btn modal-btn--primary"
                 disabled={busy || !selected}
-                onClick={() => selected && onConfirm(deviceId, selected)}
+                onClick={() => selected && onConfirm(confirmIds, selected)}
               >
                 {busy ? "Starting…" : "Start app"}
               </button>

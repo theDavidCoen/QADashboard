@@ -137,11 +137,11 @@ export async function listLaunchableApps(deviceId: string): Promise<{ apps: Laun
   return { apps: payload.apps ?? [] };
 }
 
-export function startPackage(deviceId: string, packageName: string, activity?: string) {
+export function startPackage(packageName: string, activity?: string, deviceIds?: string[]) {
   return postAction("/api/actions/start-package", {
-    deviceId,
     package: packageName,
     activity: activity || undefined,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
   });
 }
 

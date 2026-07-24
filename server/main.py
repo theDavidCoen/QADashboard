@@ -76,9 +76,10 @@ class SingleDeviceBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class StartPackageBody(SingleDeviceBody):
+class StartPackageBody(DeviceIdsBody):
     package: str
     activity: str | None = None
+    device_id: str | None = Field(default=None, alias="deviceId")
 
 
 class EdgeAccountSaveBody(BaseModel):
@@ -98,6 +99,9 @@ class StartEdgeAccountBody(DeviceIdsBody):
 class SettingsPatchBody(BaseModel):
     capture_path: str | None = Field(default=None, alias="capturePath")
     vault_path: str | None = Field(default=None, alias="vaultPath")
+    edge_features_enabled: bool | None = Field(default=None, alias="edgeFeaturesEnabled")
+    arkade_features_enabled: bool | None = Field(default=None, alias="arkadeFeaturesEnabled")
+    sound_effects_enabled: bool | None = Field(default=None, alias="soundEffectsEnabled")
     sidebar_actions: dict[str, bool] | None = Field(default=None, alias="sidebarActions")
     custom_adb_actions: list[dict] | None = Field(default=None, alias="customAdbActions")
     master_password: str | None = Field(default=None, alias="masterPassword")
@@ -235,11 +239,12 @@ async def action_list_apps(device_id: str) -> dict:
 
 @app.post("/api/actions/start-package")
 async def action_start_package(body: StartPackageBody) -> dict:
-    results = await start_package_async(body.device_id, body.package, body.activity)
+    ids = body.device_ids
+    if not ids and body.device_id:
+        ids = [body.device_id]
+    results = await start_package_async(body.package, body.activity, ids)
     if not results:
         raise HTTPException(status_code=404, detail="No Android devices matched")
-    if not results[0].ok:
-        raise HTTPException(status_code=400, detail=results[0].detail or "Launch failed")
     return {"results": [item.to_dict() for item in results]}
 
 
@@ -331,6 +336,9 @@ def _settings_response(data: dict | None = None) -> dict:
     return {
         "capturePath": settings["capturePath"],
         "vaultPath": settings["vaultPath"],
+        "edgeFeaturesEnabled": bool(settings.get("edgeFeaturesEnabled", True)),
+        "arkadeFeaturesEnabled": bool(settings.get("arkadeFeaturesEnabled", True)),
+        "soundEffectsEnabled": bool(settings.get("soundEffectsEnabled", True)),
         "sidebarActions": settings["sidebarActions"],
         "sidebarActionDefs": SIDEBAR_ACTION_DEFS,
         "customAdbActions": settings["customAdbActions"],
@@ -349,6 +357,12 @@ async def put_settings(body: SettingsPatchBody) -> dict:
     patch: dict = {}
     if body.capture_path is not None:
         patch["capturePath"] = body.capture_path.strip()
+    if body.edge_features_enabled is not None:
+        patch["edgeFeaturesEnabled"] = body.edge_features_enabled
+    if body.arkade_features_enabled is not None:
+        patch["arkadeFeaturesEnabled"] = body.arkade_features_enabled
+    if body.sound_effects_enabled is not None:
+        patch["soundEffectsEnabled"] = body.sound_effects_enabled
     if body.sidebar_actions is not None:
         patch["sidebarActions"] = body.sidebar_actions
     if body.custom_adb_actions is not None:

@@ -81,7 +81,7 @@ export function AirplaneModeModal({
                     disabled={busy}
                   />
                   <span className="picker-item__row">
-                    <span className="picker-item__name">All Android devices</span>
+                    <span className="picker-item__name">All Devices</span>
                     <span className="picker-item__detail">{android.length}</span>
                   </span>
                 </label>

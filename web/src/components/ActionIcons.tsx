@@ -153,6 +153,18 @@ export function IconSettings({ className }: IconProps) {
   );
 }
 
+export function IconFocus({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="12" cy="12" r="3.25" />
+      <path d="M12 3v3.5" />
+      <path d="M12 17.5V21" />
+      <path d="M3 12h3.5" />
+      <path d="M17.5 12H21" />
+    </Svg>
+  );
+}
+
 export type ActionIconName =
   | "play"
   | "code"
@@ -167,7 +179,8 @@ export type ActionIconName =
   | "airplane"
   | "unplug"
   | "user"
-  | "settings";
+  | "settings"
+  | "focus";
 
 const ICONS: Record<ActionIconName, (props: IconProps) => ReactElement> = {
   play: IconPlay,
@@ -184,6 +197,7 @@ const ICONS: Record<ActionIconName, (props: IconProps) => ReactElement> = {
   unplug: IconUnplug,
   user: IconUser,
   settings: IconSettings,
+  focus: IconFocus,
 };
 
 export function ActionIcon({ name, className = "sidebar-action__icon" }: { name: ActionIconName; className?: string }) {

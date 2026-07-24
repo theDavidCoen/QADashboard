@@ -35,7 +35,7 @@ export function EdgeAccountModal({
   const [accounts, setAccounts] = useState<EdgeAccount[]>([]);
   const [vaultNote, setVaultNote] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("new");
+  const [mode, setMode] = useState<Mode>("pick");
   const [selected, setSelected] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -55,7 +55,7 @@ export function EdgeAccountModal({
           : "Credentials stay on this PC, encrypted, never shared online",
       );
       if (payload.accounts.length) {
-        setMode((prev) => (prev === "new" && selected ? prev : "pick"));
+        setMode((prev) => (prev === "new" ? "new" : "pick"));
         setSelected((prev) => prev ?? payload.accounts[0].username);
       } else {
         setMode("new");
@@ -145,9 +145,29 @@ export function EdgeAccountModal({
     }
   };
 
+  const openAnotherAccount = () => {
+    setMode("new");
+    setSelected(null);
+    setUsername("");
+    setPassword("");
+    setPin("");
+  };
+
+  const backFromForm = () => {
+    if (accounts.length) {
+      setMode("pick");
+      setSelected(accounts[0]?.username ?? null);
+      setUsername("");
+      setPassword("");
+      setPin("");
+      return;
+    }
+    onClose();
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || loading) return;
     if (mode === "pick" && selected) {
       const account = accounts.find((item) => item.username === selected);
       if (account) {
@@ -184,6 +204,10 @@ export function EdgeAccountModal({
         ? /^\d{4,8}$/.test(pin.trim())
         : Boolean(username.trim() && (password || /^\d{4,8}$/.test(pin.trim())));
 
+  const showAccounts = !loading && mode === "pick" && accounts.length > 0;
+  const showCredentialForm = !loading && mode === "new";
+  const showNeedPin = !loading && mode === "need-pin";
+
   return (
     <dialog ref={dialogRef} className="device-picker" onClose={onClose}>
       <form className="device-picker__panel" onSubmit={submit}>
@@ -194,27 +218,29 @@ export function EdgeAccountModal({
           </button>
         </header>
 
-        <p className="picker-empty" style={{ marginBottom: "0.65rem" }}>
+        <p className="picker-empty" style={{ marginBottom: loading ? "0" : "0.65rem" }}>
           {loading
             ? "Scanning device login screen and local vault…"
             : busy && selected
               ? `Starting ${selected}…`
               : mode === "need-pin"
                 ? `Enter the PIN for ${selected} (saved encrypted on this PC).`
-                : "Pick a logged-in / saved account, or enter credentials for another."}
+                : mode === "new"
+                  ? "Enter credentials for another account."
+                  : "Pick a logged-in / saved account, or enter credentials for another."}
         </p>
-        {vaultNote ? <p className="edge-vault-note">{vaultNote}</p> : null}
+        {!loading && vaultNote ? <p className="edge-vault-note">{vaultNote}</p> : null}
 
         {loadError ? <p className="picker-empty">{loadError}</p> : null}
 
-        {!loading && accounts.length > 0 && mode !== "need-pin" ? (
+        {showAccounts ? (
           <>
             <p className="modal-field__label" style={{ marginBottom: "0.45rem" }}>
               Accounts
             </p>
             <ul className="picker-list airplane-targets app-pick-list" style={{ marginBottom: "0.85rem" }}>
               {accounts.map((account) => {
-                const isSelected = mode === "pick" && selected === account.username;
+                const isSelected = selected === account.username;
                 return (
                   <li key={account.username} className="edge-account-row">
                     <button
@@ -250,16 +276,9 @@ export function EdgeAccountModal({
               <li>
                 <button
                   type="button"
-                  className={`picker-item airplane-target edge-account-pick ${
-                    mode === "new" ? "is-selected" : ""
-                  }`}
+                  className="picker-item airplane-target edge-account-pick"
                   disabled={busy}
-                  onClick={() => {
-                    setMode("new");
-                    setSelected(null);
-                    setPassword("");
-                    setPin("");
-                  }}
+                  onClick={openAnotherAccount}
                 >
                   <span className="picker-item__row">
                     <span className="picker-item__name">Another account…</span>
@@ -271,7 +290,7 @@ export function EdgeAccountModal({
           </>
         ) : null}
 
-        {mode === "need-pin" ? (
+        {showNeedPin ? (
           <>
             <label className="modal-field">
               <span className="modal-field__label">PIN (4–8 digits)</span>
@@ -284,7 +303,7 @@ export function EdgeAccountModal({
                 value={pin}
                 onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
                 placeholder="••••"
-                disabled={busy || loading}
+                disabled={busy}
               />
             </label>
             <label className="edge-save-check">
@@ -299,7 +318,7 @@ export function EdgeAccountModal({
           </>
         ) : null}
 
-        {(mode === "new" || (!loading && accounts.length === 0)) && (
+        {showCredentialForm ? (
           <>
             <label className="modal-field">
               <span className="modal-field__label">Username</span>
@@ -310,12 +329,9 @@ export function EdgeAccountModal({
                 autoComplete="off"
                 spellCheck={false}
                 value={username}
-                onChange={(event) => {
-                  setMode("new");
-                  setUsername(event.target.value);
-                }}
+                onChange={(event) => setUsername(event.target.value)}
                 placeholder="edge-username"
-                disabled={busy || loading}
+                disabled={busy}
               />
             </label>
             <label className="modal-field">
@@ -325,11 +341,8 @@ export function EdgeAccountModal({
                 type="password"
                 autoComplete="off"
                 value={password}
-                onChange={(event) => {
-                  setMode("new");
-                  setPassword(event.target.value);
-                }}
-                disabled={busy || loading}
+                onChange={(event) => setPassword(event.target.value)}
+                disabled={busy}
               />
             </label>
             <label className="modal-field">
@@ -340,12 +353,9 @@ export function EdgeAccountModal({
                 inputMode="numeric"
                 autoComplete="off"
                 value={pin}
-                onChange={(event) => {
-                  setMode("new");
-                  setPin(event.target.value.replace(/\D/g, "").slice(0, 8));
-                }}
+                onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
                 placeholder="4–8 digits"
-                disabled={busy || loading}
+                disabled={busy}
               />
             </label>
             <label className="edge-save-check">
@@ -358,7 +368,7 @@ export function EdgeAccountModal({
               Save encrypted on this PC (never plaintext, never online)
             </label>
           </>
-        )}
+        ) : null}
 
         <div className="modal-actions">
           <button
@@ -370,19 +380,33 @@ export function EdgeAccountModal({
                 setPin("");
                 return;
               }
+              if (mode === "new" && accounts.length > 0) {
+                backFromForm();
+                return;
+              }
               onClose();
             }}
             disabled={busy}
           >
-            {mode === "need-pin" ? "Back" : "Cancel"}
+            {mode === "need-pin" || (mode === "new" && accounts.length > 0 && !loading)
+              ? "Back"
+              : "Cancel"}
           </button>
-          {mode === "new" || mode === "need-pin" || accounts.length === 0 ? (
+          {loading ? null : mode === "new" || mode === "need-pin" ? (
             <button
               type="submit"
               className="modal-btn modal-btn--primary"
-              disabled={busy || loading || !canSubmit}
+              disabled={busy || !canSubmit}
             >
               {busy ? "Starting…" : mode === "need-pin" ? "Save PIN & start" : "Start"}
+            </button>
+          ) : accounts.length === 0 ? (
+            <button
+              type="submit"
+              className="modal-btn modal-btn--primary"
+              disabled={busy || !canSubmit}
+            >
+              {busy ? "Starting…" : "Start"}
             </button>
           ) : (
             <button type="button" className="modal-btn modal-btn--primary" disabled>

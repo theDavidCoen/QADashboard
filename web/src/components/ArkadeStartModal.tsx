@@ -33,6 +33,9 @@ export function ArkadeStartModal({
     (async () => {
       setLoading(true);
       setLoadError(null);
+      setSessions([]);
+      setMode("new");
+      setSelectedUrl(null);
       try {
         const payload = await listArkadeSessions(deviceIds);
         if (cancelled) return;
@@ -40,8 +43,6 @@ export function ArkadeStartModal({
         if (payload.sessions.length) {
           setMode("existing");
           setSelectedUrl(payload.sessions[0].url);
-        } else {
-          setMode("new");
         }
       } catch (error) {
         if (!cancelled) {
@@ -55,7 +56,8 @@ export function ArkadeStartModal({
     return () => {
       cancelled = true;
     };
-  }, [deviceIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per device set
+  }, [deviceIds?.join(",")]);
 
   useEffect(() => {
     if (mode !== "new" || loading) return;
@@ -67,7 +69,7 @@ export function ArkadeStartModal({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || loading) return;
     if (mode === "existing" && selectedUrl) {
       onConfirm(selectedUrl);
       return;
@@ -80,32 +82,42 @@ export function ArkadeStartModal({
   const canSubmit =
     mode === "existing" ? Boolean(selectedUrl) : Boolean(url.trim());
 
+  const showSessionList = !loading && sessions.length > 0;
+  const showUrlField = !loading && (mode === "new" || sessions.length === 0);
+
   return (
     <dialog ref={dialogRef} className="device-picker" onClose={onClose}>
       <form className="device-picker__panel" onSubmit={submit}>
         <header>
           <h3>Start Arkade</h3>
-          <button type="button" className="picker-close" onClick={onClose} aria-label="Close">
+          <button type="button" className="picker-close" onClick={onClose} aria-label="Close" disabled={busy}>
             ×
           </button>
         </header>
 
-        <p className="picker-empty" style={{ marginBottom: "0.85rem" }}>
+        <p className="picker-empty" style={{ marginBottom: loading ? "0.65rem" : "0.85rem" }}>
           {loading
-            ? "Looking for open Arkade windows in Chrome…"
+            ? "Scanning Chrome on connected devices for open Arkade windows…"
             : sessions.length
-              ? "Choose an already open Arkade window, or paste a new URL."
-              : "Paste the test URL. Chrome will open it on every Android device added to the dashboard."}
+              ? "Pick an open window or enter a new URL."
+              : "No open Arkade window found. Paste the test URL to open on every Android device."}
         </p>
 
-        {loadError ? <p className="picker-empty">{loadError}</p> : null}
+        {loading ? (
+          <div className="modal-loading-row" aria-live="polite">
+            <span className="edge-account-spinner" aria-hidden="true" />
+            <span>Looking for open Arkade tabs and PWAs…</span>
+          </div>
+        ) : null}
 
-        {!loading && sessions.length > 0 ? (
+        {loadError ? <p className="settings-error">{loadError}</p> : null}
+
+        {showSessionList ? (
           <>
             <p className="modal-field__label" style={{ marginBottom: "0.45rem" }}>
               Open windows
             </p>
-            <ul className="picker-list airplane-targets app-pick-list" style={{ marginBottom: "0.85rem" }}>
+            <ul className="picker-list airplane-targets app-pick-list">
               {sessions.map((session) => (
                 <li key={session.url}>
                   <label
@@ -133,10 +145,9 @@ export function ArkadeStartModal({
                   </label>
                 </li>
               ))}
+              <li className="picker-list__divider" aria-hidden="true" />
               <li>
-                <label
-                  className={`picker-item airplane-target ${mode === "new" ? "is-selected" : ""}`}
-                >
+                <label className={`picker-item airplane-target ${mode === "new" ? "is-selected" : ""}`}>
                   <input
                     type="radio"
                     name="arkade-session"
@@ -154,7 +165,7 @@ export function ArkadeStartModal({
           </>
         ) : null}
 
-        {(mode === "new" || (!loading && sessions.length === 0)) && (
+        {showUrlField ? (
           <label className="modal-field">
             <span className="modal-field__label">URL</span>
             <input
@@ -169,22 +180,24 @@ export function ArkadeStartModal({
               }}
               placeholder="https://arkade.money/…"
               required={mode === "new"}
-              disabled={busy || loading}
+              disabled={busy}
             />
           </label>
-        )}
+        ) : null}
 
         <div className="modal-actions">
           <button type="button" className="modal-btn modal-btn--ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button
-            type="submit"
-            className="modal-btn modal-btn--primary"
-            disabled={busy || loading || !canSubmit}
-          >
-            {busy ? "Opening…" : mode === "existing" ? "Open selected" : "Open on devices"}
-          </button>
+          {loading ? null : (
+            <button
+              type="submit"
+              className="modal-btn modal-btn--primary"
+              disabled={busy || !canSubmit}
+            >
+              {busy ? "Opening…" : mode === "existing" ? "Open selected" : "Open on devices"}
+            </button>
+          )}
         </div>
       </form>
     </dialog>

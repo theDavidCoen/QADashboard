@@ -35,7 +35,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { StartOtherAppModal } from "./components/StartOtherAppModal";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { VideoRecordModal } from "./components/VideoRecordModal";
-import { playShutterSound } from "./feedback";
+import { playFocusModeSound, playRecSound, playShutterSound, setSoundEffectsEnabled } from "./feedback";
 import type { DeviceInfo, SlotDevice } from "./types";
 import { APP_LICENSE_URL, APP_REPO_URL, APP_VERSION } from "./version";
 
@@ -72,20 +72,50 @@ export default function App() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
   const [recordingDeviceId, setRecordingDeviceId] = useState<string | null>(null);
+  const [focusDeviceId, setFocusDeviceId] = useState<string | null>(null);
+  const [focusLocked, setFocusLocked] = useState(false);
   const [flashDeviceIds, setFlashDeviceIds] = useState<string[]>([]);
   const [rebootingIds, setRebootingIds] = useState<string[]>([]);
   const rebootingIdsRef = useRef<string[]>([]);
   const rebootingSeenOffline = useRef<Set<string>>(new Set());
+  const recordingDeviceIdRef = useRef<string | null>(null);
+  const focusDeviceIdRef = useRef<string | null>(null);
+  const actionBusyRef = useRef(false);
+  const modalRef = useRef<ModalKind>(null);
+  const runVideoStopRef = useRef<(deviceId: string) => Promise<void>>(async () => {});
   const [sidebarFlags, setSidebarFlags] = useState<Record<string, boolean>>({});
+  const [edgeFeaturesEnabled, setEdgeFeaturesEnabled] = useState(false);
+  const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(false);
+  const [soundEffectsEnabled, setSoundEffectsEnabledState] = useState(true);
+  const [featuresReady, setFeaturesReady] = useState(false);
   const [customAdbActions, setCustomAdbActions] = useState<CustomAdbAction[]>([]);
   const [capturePathHint, setCapturePathHint] = useState("~/Immagini/Schermate");
 
-  const actionVisible = (id: string) => sidebarFlags[id] !== false;
+  const EDGE_ACTION_IDS = useMemo(
+    () => new Set(["start_edge", "start_edge_account", "start_edge_develop"]),
+    [],
+  );
+  const ARKADE_ACTION_IDS = useMemo(() => new Set(["start_arkade"]), []);
+
+  const actionVisible = (id: string) => {
+    if (!featuresReady && (EDGE_ACTION_IDS.has(id) || ARKADE_ACTION_IDS.has(id))) {
+      return false;
+    }
+    if (EDGE_ACTION_IDS.has(id) && !edgeFeaturesEnabled) return false;
+    if (ARKADE_ACTION_IDS.has(id) && !arkadeFeaturesEnabled) return false;
+    return sidebarFlags[id] !== false;
+  };
 
   const applySettings = (payload: SettingsPayload) => {
     setSidebarFlags(payload.sidebarActions ?? {});
+    setEdgeFeaturesEnabled(payload.edgeFeaturesEnabled === true);
+    setArkadeFeaturesEnabled(payload.arkadeFeaturesEnabled === true);
+    const soundOn = payload.soundEffectsEnabled !== false;
+    setSoundEffectsEnabledState(soundOn);
+    setSoundEffectsEnabled(soundOn);
     setCustomAdbActions(payload.customAdbActions ?? []);
     if (payload.capturePath) setCapturePathHint(payload.capturePath);
+    setFeaturesReady(true);
   };
 
   useEffect(() => {
@@ -242,6 +272,11 @@ export default function App() {
 
   const removeSlot = (index: number) => {
     setSlots((current) => {
+      const removed = current[index];
+      if (removed && focusDeviceId === removed.id) {
+        setFocusDeviceId(null);
+        setFocusLocked(false);
+      }
       const next = [...current];
       next.splice(index, 1);
       return next.length ? next : [null];
@@ -253,7 +288,42 @@ export default function App() {
     setPickerIndex(null);
     setModal(null);
     setRecordingDeviceId(null);
+    setFocusDeviceId(null);
+    setFocusLocked(false);
   };
+
+  const exitFocusMode = useCallback(() => {
+    setFocusDeviceId((current) => {
+      if (!current) return current;
+      playFocusModeSound(false);
+      return null;
+    });
+    setFocusLocked(false);
+  }, []);
+
+  const enterFocusMode = () => {
+    const first = addedDevices[0];
+    if (!first) return;
+    setFocusDeviceId(first.id);
+    setFocusLocked(false);
+    playFocusModeSound(true);
+  };
+
+  const onFocusHoverDevice = (deviceId: string) => {
+    if (!focusDeviceId || focusLocked) return;
+    setFocusDeviceId(deviceId);
+  };
+
+  const onFocusLockDevice = (deviceId: string) => {
+    if (!focusDeviceId || focusLocked) return;
+    setFocusDeviceId(deviceId);
+    setFocusLocked(true);
+  };
+
+  recordingDeviceIdRef.current = recordingDeviceId;
+  focusDeviceIdRef.current = focusDeviceId;
+  actionBusyRef.current = actionBusy;
+  modalRef.current = modal;
 
   const canReorder = connectedCount > 1;
 
@@ -369,12 +439,16 @@ export default function App() {
     }
   };
 
-  const runOtherApp = async (deviceId: string, app: LaunchableApp) => {
+  const runOtherApp = async (deviceIds: string[] | undefined, app: LaunchableApp) => {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
     setActionBusy(true);
     try {
-      const payload = await startPackage(deviceId, app.package, app.activity);
+      const payload = await startPackage(
+        app.package,
+        app.activity,
+        resolveActionTargets(deviceIds),
+      );
       showResults("Start app", payload.results);
     } catch (error) {
       setActionNote(`Start app: ${error instanceof Error ? error.message : "failed"}`);
@@ -471,6 +545,7 @@ export default function App() {
       await startScreenrecord(deviceId);
       setRecordingDeviceId(deviceId);
       setActionNote("Video: recording…");
+      playRecSound(true);
     } catch (error) {
       setRecordingDeviceId(null);
       setActionNote(`Video: ${error instanceof Error ? error.message : "failed"}`);
@@ -481,10 +556,14 @@ export default function App() {
 
   const runVideoStop = async (deviceId: string) => {
     if (actionBusy) return;
+    // Drop Rec UI immediately; finalize save in the background.
+    setRecordingDeviceId(null);
+    recordingDeviceIdRef.current = null;
+    playRecSound(false);
     setActionBusy(true);
+    setActionNote("Video: saving…");
     try {
       const payload = await stopScreenrecord(deviceId);
-      setRecordingDeviceId(null);
       showResults("Video", payload.results);
     } catch (error) {
       setActionNote(`Video: ${error instanceof Error ? error.message : "failed"}`);
@@ -492,6 +571,42 @@ export default function App() {
       setActionBusy(false);
     }
   };
+  runVideoStopRef.current = runVideoStop;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (modalRef.current) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) {
+          return;
+        }
+      }
+
+      const recordingId = recordingDeviceIdRef.current;
+      if (recordingId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!actionBusyRef.current) {
+          void runVideoStopRef.current(recordingId);
+        }
+        return;
+      }
+
+      // Focus Mode: Esc exits only when the pointer is not over a device stream
+      // (when hovering a stream, DeviceStream still maps Esc → Android BACK).
+      if (focusDeviceIdRef.current && !document.querySelector(".device-stream:hover")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        exitFocusMode();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [exitFocusMode]);
 
   const runCustomAction = async (action: CustomAdbAction) => {
     if (actionBusy || !actionsEnabled) return;
@@ -762,28 +877,73 @@ export default function App() {
         </div>
       </aside>
 
-      <section className="workspace" aria-label="Device workspace">
+      <section
+        className={[
+          "workspace",
+          focusDeviceId ? "workspace--focus-mode" : "",
+          focusDeviceId && focusLocked ? "workspace--focus-locked" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label="Device workspace"
+      >
         <div className="workspace-head">
           <h2 className="workspace-title">Devices</h2>
         </div>
 
-        {recordingDeviceId ? (
-          <div className="workspace-rec-controls">
-            <span className="workspace-rec-badge" aria-live="polite">
-              <span className="workspace-rec-badge__dot" aria-hidden="true" />
-              Rec
-            </span>
+        <div className="workspace-top-controls">
+          {connectedCount > 0 ? (
+            focusDeviceId ? (
+              <button
+                type="button"
+                className="workspace-focus-badge"
+                onClick={exitFocusMode}
+                title="Exit Focus Mode"
+                aria-label="Exit Focus Mode"
+              >
+                <span className="workspace-focus-badge__dot" aria-hidden="true" />
+                Focus Mode Active
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="workspace-focus-toggle"
+                onClick={enterFocusMode}
+                title="Focus Mode"
+                aria-label="Enter Focus Mode"
+              >
+                <ActionIcon name="focus" className="workspace-focus-toggle__icon" />
+                <span>Focus</span>
+              </button>
+            )
+          ) : null}
+
+          {recordingDeviceId ? (
             <button
               type="button"
               className="workspace-stop-rec"
               disabled={actionBusy}
               onClick={() => runVideoStop(recordingDeviceId)}
+              title="Stop recording"
+              aria-label="Stop recording"
             >
               <ActionIcon name="stop" className="workspace-stop-rec__icon" />
               <span>Stop recording</span>
             </button>
-          </div>
-        ) : null}
+          ) : addedAndroidIds.length > 0 ? (
+            <button
+              type="button"
+              className="workspace-rec-toggle"
+              disabled={actionBusy}
+              onClick={() => setModal("video")}
+              title="Start recording"
+              aria-label="Start recording"
+            >
+              <span className="workspace-rec-toggle__dot" aria-hidden="true" />
+              <span>Rec</span>
+            </button>
+          ) : null}
+        </div>
 
         <div className="device-strip-outer">
           <div className="device-strip" aria-label="Connected devices">
@@ -794,8 +954,21 @@ export default function App() {
                   device={slot}
                   onRemove={() => removeSlot(index)}
                   recording={recordingDeviceId === slot.id}
+                  recordingActive={recordingDeviceId !== null}
                   flash={flashDeviceIds.includes(slot.id)}
                   rebooting={rebootingIds.includes(slot.id)}
+                  focused={focusDeviceId === slot.id}
+                  focusDimmed={focusDeviceId !== null && focusDeviceId !== slot.id}
+                  onFocusHover={
+                    focusDeviceId && !focusLocked
+                      ? () => onFocusHoverDevice(slot.id)
+                      : undefined
+                  }
+                  onFocusLock={
+                    focusDeviceId && !focusLocked
+                      ? () => onFocusLockDevice(slot.id)
+                      : undefined
+                  }
                   canReorder={canReorder}
                   dragging={dragIndex === index}
                   dropTarget={dragIndex !== null && dropIndex === index && dragIndex !== index}
@@ -819,7 +992,7 @@ export default function App() {
         </div>
 
         <p className="workspace-hint">
-          Click a screen to control · drag handle to reorder · drag strip to scroll
+          Hover a screen to type · click to touch · drag handle to reorder · drag strip to scroll
         </p>
       </section>
 
@@ -836,7 +1009,7 @@ export default function App() {
         <DevicesReadyModal devices={available} onClose={() => setModal(null)} />
       ) : null}
 
-      {modal === "arkade" ? (
+      {modal === "arkade" && arkadeFeaturesEnabled ? (
         <ArkadeStartModal
           busy={actionBusy}
           deviceIds={addedAndroidIds}
@@ -845,7 +1018,7 @@ export default function App() {
         />
       ) : null}
 
-      {modal === "edge-account" ? (
+      {modal === "edge-account" && edgeFeaturesEnabled ? (
         <EdgeAccountModal
           busy={actionBusy}
           deviceIds={addedAndroidIds}
@@ -857,6 +1030,9 @@ export default function App() {
       {modal === "settings" ? (
         <SettingsModal
           deviceIds={addedAndroidIds}
+          edgeFeaturesEnabled={edgeFeaturesEnabled}
+          arkadeFeaturesEnabled={arkadeFeaturesEnabled}
+          soundEffectsEnabled={soundEffectsEnabled}
           onClose={() => setModal(null)}
           onSaved={(payload) => applySettings(payload)}
         />
@@ -889,7 +1065,6 @@ export default function App() {
           confirmLabel="Force-stop background"
           devices={addedAndroid}
           busy={actionBusy}
-          allowAll={false}
           onConfirm={runKillBackground}
           onClose={() => setModal(null)}
         />
@@ -902,7 +1077,6 @@ export default function App() {
           confirmLabel="Force-stop app"
           devices={addedAndroid}
           busy={actionBusy}
-          allowAll={false}
           onConfirm={runKillForeground}
           onClose={() => setModal(null)}
         />
@@ -937,7 +1111,6 @@ export default function App() {
           confirmLabel="Capture"
           devices={addedAndroid}
           busy={actionBusy}
-          allowAll={false}
           onConfirm={runScreenshot}
           onClose={() => setModal(null)}
         />

@@ -24,6 +24,9 @@ export interface VaultInfo {
 export interface SettingsPayload {
   capturePath: string;
   vaultPath: string;
+  edgeFeaturesEnabled: boolean;
+  arkadeFeaturesEnabled: boolean;
+  soundEffectsEnabled: boolean;
   sidebarActions: Record<string, boolean>;
   sidebarActionDefs: SidebarActionDef[];
   customAdbActions: CustomAdbAction[];
@@ -56,6 +59,9 @@ export async function fetchSettings(): Promise<SettingsPayload> {
 export async function saveSettings(patch: {
   capturePath?: string;
   vaultPath?: string;
+  edgeFeaturesEnabled?: boolean;
+  arkadeFeaturesEnabled?: boolean;
+  soundEffectsEnabled?: boolean;
   sidebarActions?: Record<string, boolean>;
   customAdbActions?: CustomAdbAction[];
   masterPassword?: string;
