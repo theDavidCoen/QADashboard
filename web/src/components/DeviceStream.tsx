@@ -22,6 +22,8 @@ interface DeviceStreamProps {
   mockupId: string;
   /** When true, Esc is reserved for stop-and-save (handled in App). */
   recordingActive?: boolean;
+  /** Landscape phone chrome + upright stream (device already rotated via ADB). */
+  landscape?: boolean;
 }
 
 /** Which device currently receives PC keyboard input (hover or last click). */
@@ -81,7 +83,13 @@ function wsUrl(deviceId: string): string {
   return `${protocol}://${window.location.host}/ws/stream/${encodeURIComponent(deviceId)}`;
 }
 
-export function DeviceStream({ deviceId, platform, mockupId, recordingActive = false }: DeviceStreamProps) {
+export function DeviceStream({
+  deviceId,
+  platform,
+  mockupId,
+  recordingActive = false,
+  landscape = false,
+}: DeviceStreamProps) {
   const streamRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -108,6 +116,77 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
 
     const setStatus = (text: string) => {
       status.textContent = text;
+    };
+
+    const closeDecoder = () => {
+      if (decoder && decoder.state !== "closed") {
+        try {
+          decoder.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      decoder = null;
+      configured = false;
+    };
+
+    const ensureDecoder = (width: number, height: number) => {
+      if (!("VideoDecoder" in window)) {
+        setStatus("WebCodecs not supported in this browser");
+        return;
+      }
+      if (width <= 0 || height <= 0) return;
+      const prev = videoSizeRef.current;
+      if (decoder && prev.width === width && prev.height === height) return;
+
+      closeDecoder();
+      videoSizeRef.current = { width, height };
+      canvas.width = width;
+      canvas.height = height;
+      decoder = new VideoDecoder({
+        output(frame) {
+          const fw = frame.displayWidth || frame.codedWidth;
+          const fh = frame.displayHeight || frame.codedHeight;
+          if (fw > 0 && fh > 0 && (fw !== canvas.width || fh !== canvas.height)) {
+            canvas.width = fw;
+            canvas.height = fh;
+            videoSizeRef.current = { width: fw, height: fh };
+          }
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+          }
+          frame.close();
+          setStatus("Live · hover or click for keyboard");
+        },
+        error(err) {
+          setStatus(`Decoder: ${err.message}`);
+        },
+      });
+    };
+
+    const configureFromConfigPacket = (payload: Uint8Array) => {
+      if (!decoder) return;
+      const nals = splitAnnexB(payload);
+      const sps = nals.find((nal) => (nal[0] & 0x1f) === 7);
+      const pps = nals.find((nal) => (nal[0] & 0x1f) === 8);
+      if (!sps || !pps) return;
+
+      try {
+        if (configured && decoder.state === "configured") {
+          decoder.reset();
+        }
+        decoder.configure({
+          codec: codecFromSps(sps),
+          codedWidth: canvas.width || 1080,
+          codedHeight: canvas.height || 1920,
+          description: buildAvcDescription(sps, pps),
+        });
+        configured = true;
+      } catch (err) {
+        configured = false;
+        setStatus(`Decoder: ${err instanceof Error ? err.message : "configure failed"}`);
+      }
     };
 
     const sendControl = (payload: Record<string, unknown>) => {
@@ -138,46 +217,6 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
     const sendTouch = (action: number, clientX: number, clientY: number, pressure = 1) => {
       const point = mapPoint(clientX, clientY);
       sendControl({ type: "touch", action, pressure, ...point });
-    };
-
-    const ensureDecoder = (width: number, height: number) => {
-      if (!("VideoDecoder" in window)) {
-        setStatus("WebCodecs not supported in this browser");
-        return;
-      }
-      if (decoder) return;
-      videoSizeRef.current = { width, height };
-      canvas.width = width;
-      canvas.height = height;
-      decoder = new VideoDecoder({
-        output(frame) {
-          const ctx = canvas.getContext("2d");
-          if (ctx) {
-            ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
-          }
-          frame.close();
-          setStatus("Live · hover or click for keyboard");
-        },
-        error(err) {
-          setStatus(`Decoder: ${err.message}`);
-        },
-      });
-    };
-
-    const configureFromConfigPacket = (payload: Uint8Array) => {
-      if (!decoder || configured) return;
-      const nals = splitAnnexB(payload);
-      const sps = nals.find((nal) => (nal[0] & 0x1f) === 7);
-      const pps = nals.find((nal) => (nal[0] & 0x1f) === 8);
-      if (!sps || !pps) return;
-
-      decoder.configure({
-        codec: codecFromSps(sps),
-        codedWidth: canvas.width || 1080,
-        codedHeight: canvas.height || 1920,
-        description: buildAvcDescription(sps, pps),
-      });
-      configured = true;
     };
 
     const decodeVideoPacket = (payload: Uint8Array, isKey: boolean) => {
@@ -649,15 +688,17 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
 
   return (
     <div className="device-stream-wrap">
-      <PhoneMockup mockupId={mockupId}>
+      <PhoneMockup mockupId={mockupId} landscape={landscape}>
         <div
           ref={streamRef}
           className="device-stream"
           tabIndex={0}
           aria-label="Device screen — hover or click to type, click to touch"
         >
-          <canvas ref={canvasRef} className="stream-canvas" hidden={platform === "ios"} />
-          <img ref={imgRef} className="stream-image" alt="" hidden={platform !== "ios"} />
+          <div className="device-stream__video">
+            <canvas ref={canvasRef} className="stream-canvas" hidden={platform === "ios"} />
+            <img ref={imgRef} className="stream-image" alt="" hidden={platform !== "ios"} />
+          </div>
         </div>
       </PhoneMockup>
       <div className="device-stream-footer">

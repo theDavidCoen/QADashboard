@@ -7,19 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-07-24
+
 ### Added
 
 - **Desktop app shell** — `start-app.sh` + `pywebview` window; `install-desktop.sh` installs a user app-menu launcher (`.desktop` + icon). Dev workflow stays `./start.sh` + browser. Requires system `python-gobject` / `webkit2gtk-4.1` and a venv with `--system-site-packages`.
+- **Keyboard shortcuts** — hold Space 1s → Screenshot; Shift+Space → start/stop video Rec; legend at the bottom of Settings.
+- **Device actions** — Wi‑Fi, VPN, Battery saver, Rotate device; **VPN WireGuard** toggle (opens WireGuard briefly when remote intents are unavailable, then returns to the previous app).
+- **Sidebar group order** — reorder Launch / Stop / Capture / Device / Custom ADB in Settings (↑↓).
+- **Action busy veil** — while app-stealing actions run (WireGuard, VPN, Start Edge/Arkade/PWA/other app), target device slots show a spinner overlay and block touch/keyboard.
 
 ### Changed
 
 - With a **single Android device** in the workspace, target-picker modals are skipped (screenshot, kill, reboot, Rec/video start immediately; Airplane keeps Enable/Disable only; Start other app goes straight to the app list).
+- **Rotate** uses `wm user-rotation lock` and does **not** set `ignore-orientation-request`, so portrait-locked apps (e.g. Edge) are not force-resized (avoids Activity recreate / unexpected logout). Dashboard uses a real landscape phone layout at 90°/270°.
+- Rotate UI angle is synced from the device’s reported degrees (not only +90 locally).
 
-### Added
+### Fixed
 
-- **Keyboard shortcuts** — hold Space 1s → Screenshot; Shift+Space → start/stop video Rec; legend at the bottom of Settings.
-- **Device actions** — Wi‑Fi, VPN, Battery saver toggles; Rotate device (90° dashboard + device orientation, rotation lock off).
-- **Sidebar group order** — reorder Launch / Stop / Capture / Device / Custom ADB in Settings (↑↓).
+- **Battery saver** on MIUI/HyperOS — set `POWER_SAVE_MODE_OPEN` + broadcast; AOSP `low_power` / `cmd power set-mode` kept as fallback.
+- Scrcpy **orientation size changes** notify the browser (`MSG_CONFIG`); video decoder is rebuilt so landscape streams are not drawn on a stale portrait canvas.
 
 ## [0.2.0] — 2026-07-24
 

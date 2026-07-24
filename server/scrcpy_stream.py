@@ -234,8 +234,12 @@ class ScrcpyStream:
 
         if header[0] & 0x80:
             session = header
+            prev = (self.width, self.height)
             self.width = struct.unpack(">I", session[4:8])[0]
             self.height = struct.unpack(">I", session[8:12])[0]
+            # Orientation / size change: tell the browser so it can rebuild the decoder.
+            if prev != (0, 0) and prev != (self.width, self.height) and self.width and self.height:
+                return bytes([MSG_CONFIG]) + struct.pack(">II", self.width, self.height)
             return self._read_packet()
 
         pts_flags = struct.unpack(">Q", header[:8])[0]

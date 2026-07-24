@@ -142,6 +142,16 @@ export function IconVpn({ className }: IconProps) {
   );
 }
 
+export function IconWireguard({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 3 4.5 6.5v5.2c0 4.4 3.1 8.4 7.5 9.3 4.4-.9 7.5-4.9 7.5-9.3V6.5L12 3Z" />
+      <path d="M8.5 12h7" />
+      <path d="M12 8.5v7" />
+    </Svg>
+  );
+}
+
 export function IconBattery({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -219,6 +229,7 @@ export type ActionIconName =
   | "airplane"
   | "wifi"
   | "vpn"
+  | "wireguard"
   | "battery"
   | "rotate"
   | "unplug"
@@ -240,6 +251,7 @@ const ICONS: Record<ActionIconName, (props: IconProps) => ReactElement> = {
   airplane: IconAirplane,
   wifi: IconWifi,
   vpn: IconVpn,
+  wireguard: IconWireguard,
   battery: IconBattery,
   rotate: IconRotate,
   unplug: IconUnplug,

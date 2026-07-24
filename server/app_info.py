@@ -287,6 +287,12 @@ def android_foreground_app(serial: str) -> AppDisplay:
     return display
 
 
+def android_resumed_component(serial: str) -> tuple[str | None, str | None]:
+    """Return (package, activity) for the currently resumed activity, if known."""
+    package, activity, webapk = _foreground_context(serial)
+    return (webapk or package), activity
+
+
 def _android_foreground_app_uncached(serial: str) -> AppDisplay:
     package, activity, webapk = _foreground_context(serial)
     effective = webapk or package

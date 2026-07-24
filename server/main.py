@@ -37,6 +37,8 @@ from .actions import (
     vpn_status_async,
     wifi_async,
     wifi_status_async,
+    wireguard_async,
+    wireguard_status_async,
 )
 from .config import load_config
 from .credentials_vault import change_master_password, set_vault_path, unlock_vault, vault_info
@@ -212,6 +214,21 @@ async def action_vpn(body: AirplaneBody) -> dict:
 async def action_vpn_status(device_id: str | None = None) -> dict:
     ids = [device_id] if device_id else None
     results = await vpn_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/vpn-wireguard")
+async def action_wireguard(body: AirplaneBody) -> dict:
+    results = await wireguard_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/vpn-wireguard")
+async def action_wireguard_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await wireguard_status_async(ids)
     return {"results": [item.to_dict() for item in results]}
 
 

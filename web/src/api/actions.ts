@@ -207,6 +207,25 @@ export async function getVpnStatus(deviceId?: string): Promise<ActionResponse> {
   return payload;
 }
 
+export function setWireguard(enabled: boolean, deviceIds?: string[]) {
+  return postAction("/api/actions/vpn-wireguard", {
+    enabled,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
+export async function getWireguardStatus(deviceId?: string): Promise<ActionResponse> {
+  const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+  const response = await fetch(`/api/actions/vpn-wireguard${query}`);
+  const payload = (await response.json().catch(() => ({}))) as ActionResponse & {
+    detail?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.detail || `Request failed (${response.status})`);
+  }
+  return payload;
+}
+
 export function setBatterySaver(enabled: boolean, deviceIds?: string[]) {
   return postAction("/api/actions/battery-saver", {
     enabled,

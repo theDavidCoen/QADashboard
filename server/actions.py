@@ -282,6 +282,14 @@ def set_wifi(device: DeviceInfo, enabled: bool) -> ActionResult:
 def get_battery_saver(device: DeviceInfo) -> ActionResult:
     if device.platform != "android":
         return ActionResult(device.id, device.name, False, "Android only")
+    # MIUI / HyperOS expose POWER_SAVE_MODE_OPEN; AOSP uses global low_power.
+    _, miui = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "system", "POWER_SAVE_MODE_OPEN"],
+        timeout=8,
+    )
+    miui_val = miui.strip()
+    if miui_val in {"1", "0"}:
+        return ActionResult(device.id, device.name, True, "on" if miui_val == "1" else "off")
     _, setting = _run(
         ["adb", "-s", device.id, "shell", "settings", "get", "global", "low_power"],
         timeout=8,
@@ -289,13 +297,13 @@ def get_battery_saver(device: DeviceInfo) -> ActionResult:
     value = setting.strip()
     if value in {"1", "0"}:
         return ActionResult(device.id, device.name, True, "on" if value == "1" else "off")
-    code, out = _run(
+    _, out = _run(
         ["adb", "-s", device.id, "shell", "dumpsys", "power"],
         timeout=10,
     )
-    if re.search(r"mIsPowerSaveMode\s*=\s*true", out, re.I):
+    if re.search(r"mIsPowerSaveMode(?:Enabled)?\s*[:=]\s*true", out, re.I):
         return ActionResult(device.id, device.name, True, "on")
-    if re.search(r"mIsPowerSaveMode\s*=\s*false", out, re.I):
+    if re.search(r"mIsPowerSaveMode(?:Enabled)?\s*[:=]\s*false", out, re.I):
         return ActionResult(device.id, device.name, True, "off")
     return ActionResult(device.id, device.name, False, out or setting or "Battery saver status failed")
 
@@ -304,6 +312,39 @@ def set_battery_saver(device: DeviceInfo, enabled: bool) -> ActionResult:
     if device.platform != "android":
         return ActionResult(device.id, device.name, False, "Android only")
     flag = "1" if enabled else "0"
+    ps_state = "true" if enabled else "false"
+    # MIUI / HyperOS: system setting + broadcast (cmd power set-mode alone often no-ops).
+    _run(
+        [
+            "adb",
+            "-s",
+            device.id,
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "POWER_SAVE_MODE_OPEN",
+            flag,
+        ],
+        timeout=8,
+    )
+    _run(
+        [
+            "adb",
+            "-s",
+            device.id,
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            "miui.intent.action.POWER_SAVE_MODE_CHANGED",
+            "--ez",
+            "ps_state",
+            ps_state,
+        ],
+        timeout=10,
+    )
+    # AOSP / Pixel-style fallbacks.
     _run(
         ["adb", "-s", device.id, "shell", "settings", "put", "global", "low_power", flag],
         timeout=8,
@@ -312,11 +353,11 @@ def set_battery_saver(device: DeviceInfo, enabled: bool) -> ActionResult:
         ["adb", "-s", device.id, "shell", "settings", "put", "global", "low_power_sticky", flag],
         timeout=8,
     )
-    # 1 = POWER_SAVE_MODE, 0 = NO_POWER_SAVE
     code, out = _run(
         ["adb", "-s", device.id, "shell", "cmd", "power", "set-mode", flag],
         timeout=10,
     )
+    time.sleep(0.4)
     status = get_battery_saver(device)
     if status.ok and ((enabled and status.detail == "on") or ((not enabled) and status.detail == "off")):
         return ActionResult(device.id, device.name, True, status.detail)
@@ -458,17 +499,359 @@ def set_vpn(device: DeviceInfo, enabled: bool) -> ActionResult:
     )
 
 
-def rotate_device_display(device: DeviceInfo) -> ActionResult:
-    """Turn rotation lock off (auto-rotate on). Dashboard applies the 90° visual rotate."""
+WIREGUARD_PKG = "com.wireguard.android"
+_WIREGUARD_UI_XML = "/sdcard/qa-dashboard-wg-ui.xml"
+
+
+def _wireguard_installed(device_id: str) -> bool:
+    _, out = _run(
+        ["adb", "-s", device_id, "shell", "pm", "path", WIREGUARD_PKG],
+        timeout=8,
+    )
+    return "package:" in out
+
+
+def _wireguard_vpn_active(device_id: str) -> bool:
+    _, dump = _run(
+        ["adb", "-s", device_id, "shell", "dumpsys", "connectivity"],
+        timeout=12,
+    )
+    return bool(re.search(r"VPN:\s*com\.wireguard\.android", dump))
+
+
+def _parse_bounds(raw: str) -> tuple[int, int, int, int] | None:
+    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", raw.strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+
+
+def _uiautomator_xml(device_id: str) -> str:
+    _run(
+        ["adb", "-s", device_id, "shell", "uiautomator", "dump", _WIREGUARD_UI_XML],
+        timeout=20,
+    )
+    _, out = _run(
+        ["adb", "-s", device_id, "shell", "cat", _WIREGUARD_UI_XML],
+        timeout=10,
+    )
+    return out
+
+
+def _wireguard_find_switch(xml: str, tunnel: str | None = None) -> tuple[bool, int, int, str | None] | None:
+    """Return (checked, tap_x, tap_y, tunnel_name) for the WireGuard tunnel switch."""
+    nodes = re.findall(r"<node\b[^>]*/?>", xml)
+    texts: list[tuple[str, tuple[int, int, int, int]]] = []
+    switches: list[tuple[bool, tuple[int, int, int, int]]] = []
+    for node in nodes:
+        bounds_m = re.search(r'\bbounds="([^"]+)"', node)
+        if not bounds_m:
+            continue
+        bounds = _parse_bounds(bounds_m.group(1))
+        if not bounds:
+            continue
+        text_m = re.search(r'\btext="([^"]*)"', node)
+        text = text_m.group(1) if text_m else ""
+        cls_m = re.search(r'\bclass="([^"]*)"', node)
+        cls = cls_m.group(1) if cls_m else ""
+        if text and "Switch" not in cls and text not in {"WireGuard"}:
+            texts.append((text, bounds))
+        if "Switch" in cls:
+            checked = 'checked="true"' in node
+            switches.append((checked, bounds))
+    if not switches:
+        return None
+
+    def center(b: tuple[int, int, int, int]) -> tuple[int, int]:
+        return (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+
+    chosen_sw = switches[0]
+    chosen_name: str | None = None
+    if tunnel:
+        tunnel_l = tunnel.casefold()
+        for text, tb in texts:
+            if text.casefold() != tunnel_l:
+                continue
+            tcy = (tb[1] + tb[3]) // 2
+            best = min(switches, key=lambda s: abs(((s[1][1] + s[1][3]) // 2) - tcy))
+            chosen_sw = best
+            chosen_name = text
+            break
+    else:
+        # Prefer switch nearest a non-title tunnel label.
+        for text, tb in texts:
+            tcy = (tb[1] + tb[3]) // 2
+            best = min(switches, key=lambda s: abs(((s[1][1] + s[1][3]) // 2) - tcy))
+            chosen_sw = best
+            chosen_name = text
+            break
+
+    cx, cy = center(chosen_sw[1])
+    return chosen_sw[0], cx, cy, chosen_name
+
+
+def _wireguard_broadcast(device_id: str, enabled: bool, tunnel: str) -> None:
+    action = (
+        "com.wireguard.android.action.SET_TUNNEL_UP"
+        if enabled
+        else "com.wireguard.android.action.SET_TUNNEL_DOWN"
+    )
+    # Component + tunnel extra — works when WireGuard "Allow remote control apps" is on
+    # and the sender holds CONTROL_TUNNELS (often not true for adb shell).
+    _run(
+        [
+            "adb",
+            "-s",
+            device_id,
+            "shell",
+            "am",
+            "broadcast",
+            "-a",
+            action,
+            "-n",
+            "com.wireguard.android/.model.TunnelManager$IntentReceiver",
+            "--es",
+            "tunnel",
+            tunnel,
+        ],
+        timeout=12,
+    )
+
+
+def _resume_android_app(device_id: str, package: str | None, activity: str | None) -> None:
+    """Bring the previous foreground app back after a brief WireGuard UI visit."""
+    if package and package != WIREGUARD_PKG:
+        if activity:
+            component = f"{package}/{activity}"
+            code, _ = _run(
+                [
+                    "adb",
+                    "-s",
+                    device_id,
+                    "shell",
+                    "am",
+                    "start",
+                    "--activity-single-top",
+                    "-n",
+                    component,
+                ],
+                timeout=12,
+            )
+            if code == 0:
+                return
+        code, _ = _run(
+            [
+                "adb",
+                "-s",
+                device_id,
+                "shell",
+                "monkey",
+                "-p",
+                package,
+                "-c",
+                "android.intent.category.LAUNCHER",
+                "1",
+            ],
+            timeout=12,
+        )
+        if code == 0:
+            return
+    # Fallback: pop WireGuard from the activity stack.
+    _run(["adb", "-s", device_id, "shell", "input", "keyevent", "KEYCODE_BACK"], timeout=6)
+
+
+def get_wireguard(device: DeviceInfo) -> ActionResult:
     if device.platform != "android":
         return ActionResult(device.id, device.name, False, "Android only")
+    if not _wireguard_installed(device.id):
+        return ActionResult(device.id, device.name, False, "WireGuard app not installed")
+    on = _wireguard_vpn_active(device.id)
+    return ActionResult(device.id, device.name, True, "on" if on else "off")
+
+
+def set_wireguard(device: DeviceInfo, enabled: bool, tunnel: str | None = None) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    if not _wireguard_installed(device.id):
+        return ActionResult(device.id, device.name, False, "WireGuard app not installed")
+
+    current = get_wireguard(device)
+    if current.ok and ((enabled and current.detail == "on") or ((not enabled) and current.detail == "off")):
+        return ActionResult(device.id, device.name, True, current.detail)
+
+    tunnel_candidates: list[str] = []
+    if tunnel and tunnel.strip():
+        tunnel_candidates.append(tunnel.strip())
+    for name in ("VPN-Edge", "vpn-edge", "wg0"):
+        if name not in tunnel_candidates:
+            tunnel_candidates.append(name)
+
+    for name in tunnel_candidates:
+        _wireguard_broadcast(device.id, enabled, name)
+        time.sleep(1.0)
+        status = get_wireguard(device)
+        if status.ok and ((enabled and status.detail == "on") or ((not enabled) and status.detail == "off")):
+            return ActionResult(device.id, device.name, True, status.detail)
+
+    # Reliable path: toggle the in-app switch (no CONTROL_TUNNELS permission required).
+    from .app_info import android_resumed_component
+
+    prev_pkg, prev_act = android_resumed_component(device.id)
+    if prev_pkg == WIREGUARD_PKG:
+        prev_pkg, prev_act = None, None
+
+    result: ActionResult | None = None
+    try:
+        _run(["adb", "-s", device.id, "shell", "cmd", "statusbar", "collapse"], timeout=6)
+        _run(
+            [
+                "adb",
+                "-s",
+                device.id,
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-n",
+                "com.wireguard.android/.activity.MainActivity",
+            ],
+            timeout=15,
+        )
+        time.sleep(0.8)
+        xml = _uiautomator_xml(device.id)
+        prefer = tunnel_candidates[0] if tunnel_candidates else None
+        found = _wireguard_find_switch(xml, prefer)
+        if not found:
+            time.sleep(0.6)
+            xml = _uiautomator_xml(device.id)
+            found = _wireguard_find_switch(xml, prefer)
+        if not found:
+            result = ActionResult(
+                device.id,
+                device.name,
+                False,
+                "WireGuard UI switch not found — open WireGuard once and import a tunnel",
+            )
+        else:
+            checked, cx, cy, found_name = found
+            if checked != enabled:
+                _run(
+                    ["adb", "-s", device.id, "shell", "input", "tap", str(cx), str(cy)],
+                    timeout=8,
+                )
+                for _ in range(10):
+                    time.sleep(0.5)
+                    status = get_wireguard(device)
+                    if status.ok and (
+                        (enabled and status.detail == "on")
+                        or ((not enabled) and status.detail == "off")
+                    ):
+                        label = found_name or prefer or "tunnel"
+                        result = ActionResult(
+                            device.id, device.name, True, f"{status.detail} ({label})"
+                        )
+                        break
+                if result is None:
+                    result = ActionResult(
+                        device.id,
+                        device.name,
+                        False,
+                        f"WireGuard toggle tapped but still {'off' if enabled else 'on'}",
+                    )
+            else:
+                status = get_wireguard(device)
+                if status.ok:
+                    result = ActionResult(device.id, device.name, True, status.detail)
+                else:
+                    result = ActionResult(
+                        device.id, device.name, True, "on" if enabled else "off"
+                    )
+    finally:
+        _resume_android_app(device.id, prev_pkg, prev_act)
+
+    return result or ActionResult(device.id, device.name, False, "WireGuard toggle failed")
+
+
+def _wm_user_rotation(device_id: str) -> int | None:
+    """Parse `wm user-rotation` → current locked/free rotation (0–3), if known."""
+    _, out = _run(["adb", "-s", device_id, "shell", "wm", "user-rotation"], timeout=6)
+    # Examples: "lock 1" / "free 0"
+    m = re.search(r"\b([0-3])\b", (out or "").strip())
+    if not m:
+        return None
+    return int(m.group(1))
+
+
+def rotate_device_display(device: DeviceInfo) -> ActionResult:
+    """Rotate the device display by +90° and lock that orientation.
+
+    On modern Android / MIUI, `settings put system user_rotation` alone often
+    does nothing — use `wm user-rotation lock`. Do **not** set
+    `ignore-orientation-request`: forcing portrait-locked apps (e.g. Edge) into
+    landscape recreates the Activity and can wipe in-memory login state.
+    """
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+
+    cur = _wm_user_rotation(device.id)
+    if cur is None:
+        _, setting = _run(
+            ["adb", "-s", device.id, "shell", "settings", "get", "system", "user_rotation"],
+            timeout=6,
+        )
+        try:
+            cur = int((setting or "0").strip())
+        except ValueError:
+            cur = 0
+    nxt = (cur + 1) % 4
+
+    _run(
+        ["adb", "-s", device.id, "shell", "settings", "put", "system", "accelerometer_rotation", "0"],
+        timeout=6,
+    )
+    # Ensure we are not forcing apps to ignore their orientation lock.
+    _run(
+        [
+            "adb",
+            "-s",
+            device.id,
+            "shell",
+            "wm",
+            "set-ignore-orientation-request",
+            "false",
+        ],
+        timeout=8,
+    )
     code, out = _run(
-        ["adb", "-s", device.id, "shell", "settings", "put", "system", "accelerometer_rotation", "1"],
+        ["adb", "-s", device.id, "shell", "wm", "user-rotation", "lock", str(nxt)],
+        timeout=8,
+    )
+    # Keep legacy setting in sync for OEMs that still honor it.
+    _run(
+        ["adb", "-s", device.id, "shell", "settings", "put", "system", "user_rotation", str(nxt)],
         timeout=6,
     )
     if code != 0:
-        return ActionResult(device.id, device.name, False, out or "Could not disable rotation lock")
-    return ActionResult(device.id, device.name, True, "rotation lock off")
+        return ActionResult(device.id, device.name, False, out or "Rotate failed")
+
+    time.sleep(0.5)
+    locked = _wm_user_rotation(device.id)
+    if locked is not None and locked != nxt:
+        return ActionResult(
+            device.id,
+            device.name,
+            False,
+            f"Rotation command sent but wm still reports {locked * 90}°",
+        )
+    _, dump = _run(
+        ["adb", "-s", device.id, "shell", "dumpsys", "window", "displays"],
+        timeout=10,
+    )
+    if nxt and not re.search(rf"mCurrentRotation=ROTATION_{nxt * 90}\b", dump or ""):
+        # Portrait-locked foreground apps may keep the display from rotating;
+        # wm lock is still set for when the app allows it / after leaving the app.
+        pass
+    return ActionResult(device.id, device.name, True, f"{nxt * 90}°")
 
 
 def run_wifi(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
@@ -493,6 +876,14 @@ def run_vpn(enabled: bool, device_ids: list[str] | None = None) -> list[ActionRe
 
 def run_vpn_status(device_ids: list[str] | None = None) -> list[ActionResult]:
     return [get_vpn(d) for d in _resolve_targets(device_ids)]
+
+
+def run_wireguard(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [set_wireguard(d, enabled) for d in _resolve_targets(device_ids)]
+
+
+def run_wireguard_status(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [get_wireguard(d) for d in _resolve_targets(device_ids)]
 
 
 def run_rotate(device_ids: list[str] | None = None) -> list[ActionResult]:
@@ -997,6 +1388,16 @@ async def vpn_async(enabled: bool, device_ids: list[str] | None = None) -> list[
 async def vpn_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, run_vpn_status, device_ids)
+
+
+async def wireguard_async(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_wireguard, enabled, device_ids)
+
+
+async def wireguard_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_wireguard_status, device_ids)
 
 
 async def rotate_async(device_ids: list[str] | None = None) -> list[ActionResult]:

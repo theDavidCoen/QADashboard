@@ -9,9 +9,11 @@ import {
   setBatterySaver,
   setVpn,
   setWifi,
+  setWireguard,
   getBatterySaverStatus,
   getVpnStatus,
   getWifiStatus,
+  getWireguardStatus,
   startApp,
   startEdgeAccount,
   startPackage,
@@ -71,6 +73,7 @@ type ModalKind =
   | "airplane"
   | "wifi"
   | "vpn"
+  | "vpn-wireguard"
   | "battery-saver"
   | "rotate"
   | "reboot"
@@ -87,6 +90,10 @@ export default function App() {
   const [modal, setModal] = useState<ModalKind>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
+  /** Blocks stream interaction on target devices while an app-stealing action runs. */
+  const [deviceBusy, setDeviceBusy] = useState<{ deviceIds: string[]; label: string } | null>(
+    null,
+  );
   const [recordingDeviceId, setRecordingDeviceId] = useState<string | null>(null);
   const [focusDeviceId, setFocusDeviceId] = useState<string | null>(null);
   const [focusLocked, setFocusLocked] = useState(false);
@@ -217,6 +224,17 @@ export default function App() {
       return deviceIds.filter((id) => allowed.has(id));
     }
     return addedAndroidIds;
+  };
+
+  const beginDeviceBusy = (label: string, deviceIds: string[] | undefined) => {
+    const ids = deviceIds?.length ? deviceIds : addedAndroidIds;
+    setActionBusy(true);
+    setDeviceBusy({ deviceIds: ids, label });
+  };
+
+  const endDeviceBusy = () => {
+    setDeviceBusy(null);
+    setActionBusy(false);
   };
 
   const refreshDevices = useCallback(async () => {
@@ -488,20 +506,20 @@ export default function App() {
 
   const runStart = async (app: "edge" | "edge_develop", label: string) => {
     if (actionBusy || !actionsEnabled) return;
-    setActionBusy(true);
+    beginDeviceBusy(`Starting ${label}…`, addedAndroidIds);
     try {
       const payload = await startApp(app, addedAndroidIds);
       showResults(label, payload.results);
     } catch (error) {
       setActionNote(`${label}: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
     }
   };
 
   const runArkade = async (url: string) => {
     if (actionBusy || !actionsEnabled) return;
-    setActionBusy(true);
+    beginDeviceBusy("Opening Arkade…", addedAndroidIds);
     try {
       const payload = await openUrl(url, addedAndroidIds);
       showResults("Arkade", payload.results);
@@ -509,7 +527,7 @@ export default function App() {
     } catch (error) {
       setActionNote(`Arkade: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
     }
   };
 
@@ -520,7 +538,7 @@ export default function App() {
     save: boolean;
   }) => {
     if (actionBusy || !actionsEnabled) return;
-    setActionBusy(true);
+    beginDeviceBusy("Starting Edge account…", addedAndroidIds);
     try {
       const payload = await startEdgeAccount({
         username: opts.username,
@@ -534,13 +552,13 @@ export default function App() {
     } catch (error) {
       setActionNote(`Edge account: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
     }
   };
 
   const runOtherPwa = async (url: string) => {
     if (actionBusy || !actionsEnabled) return;
-    setActionBusy(true);
+    beginDeviceBusy("Opening PWA…", addedAndroidIds);
     try {
       const payload = await openUrl(url, addedAndroidIds);
       showResults("PWA", payload.results);
@@ -548,25 +566,22 @@ export default function App() {
     } catch (error) {
       setActionNote(`PWA: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
     }
   };
 
   const runOtherApp = async (deviceIds: string[] | undefined, app: LaunchableApp) => {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
-    setActionBusy(true);
+    const targets = resolveActionTargets(deviceIds);
+    beginDeviceBusy(`Starting ${app.label}…`, targets);
     try {
-      const payload = await startPackage(
-        app.package,
-        app.activity,
-        resolveActionTargets(deviceIds),
-      );
+      const payload = await startPackage(app.package, app.activity, targets);
       showResults("Start app", payload.results);
     } catch (error) {
       setActionNote(`Start app: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
     }
   };
 
@@ -631,15 +646,30 @@ export default function App() {
   const runVpn = async (enabled: boolean, deviceIds: string[] | undefined) => {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
-    setActionBusy(true);
+    const targets = resolveActionTargets(deviceIds);
+    beginDeviceBusy(enabled ? "Enabling VPN…" : "Disabling VPN…", targets);
     try {
-      const targets = resolveActionTargets(deviceIds);
       const payload = await setVpn(enabled, targets);
       showResults(enabled ? "VPN ON" : "VPN OFF", payload.results);
     } catch (error) {
       setActionNote(`VPN: ${error instanceof Error ? error.message : "failed"}`);
     } finally {
-      setActionBusy(false);
+      endDeviceBusy();
+    }
+  };
+
+  const runWireguard = async (enabled: boolean, deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    const targets = resolveActionTargets(deviceIds);
+    beginDeviceBusy(enabled ? "Enabling WireGuard…" : "Disabling WireGuard…", targets);
+    try {
+      const payload = await setWireguard(enabled, targets);
+      showResults(enabled ? "WireGuard ON" : "WireGuard OFF", payload.results);
+    } catch (error) {
+      setActionNote(`WireGuard: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      endDeviceBusy();
     }
   };
 
@@ -664,17 +694,25 @@ export default function App() {
     setActionBusy(true);
     try {
       const targets = resolveActionTargets(deviceIds) ?? [];
-      // Visual 90° rotate of device + screen in the dashboard.
-      if (targets.length) {
+      const payload = await rotateDevices(targets);
+      const okIds = new Set(
+        payload.results.filter((item) => item.ok).map((item) => item.deviceId),
+      );
+      if (okIds.size) {
         setSlotRotationDeg((prev) => {
           const next = { ...prev };
-          for (const id of targets) {
-            next[id] = ((next[id] ?? 0) + 90) % 360;
+          for (const item of payload.results) {
+            if (!item.ok || !okIds.has(item.deviceId)) continue;
+            const match = /(\d+)\s*°/.exec(item.detail || "");
+            if (match) {
+              next[item.deviceId] = Number(match[1]) % 360;
+            } else {
+              next[item.deviceId] = ((next[item.deviceId] ?? 0) + 90) % 360;
+            }
           }
           return next;
         });
       }
-      const payload = await rotateDevices(targets);
       showResults("Rotate", payload.results);
     } catch (error) {
       setActionNote(`Rotate: ${error instanceof Error ? error.message : "failed"}`);
@@ -1135,6 +1173,17 @@ export default function App() {
                       <span>VPN</span>
                     </button>
                   ) : null}
+                  {actionVisible("vpn_wireguard") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("vpn-wireguard")}
+                    >
+                      <ActionIcon name="wireguard" />
+                      <span>VPN WireGuard</span>
+                    </button>
+                  ) : null}
                   {actionVisible("battery_saver") ? (
                     <button
                       type="button"
@@ -1337,6 +1386,11 @@ export default function App() {
                   recordingActive={recordingDeviceId !== null}
                   flash={flashDeviceIds.includes(slot.id)}
                   rebooting={rebootingIds.includes(slot.id)}
+                  actionBusyLabel={
+                    deviceBusy && deviceBusy.deviceIds.includes(slot.id)
+                      ? deviceBusy.label
+                      : null
+                  }
                   rotationDeg={slotRotationDeg[slot.id] ?? 0}
                   focused={focusDeviceId === slot.id}
                   focusDimmed={focusDeviceId !== null && focusDeviceId !== slot.id}
@@ -1514,6 +1568,20 @@ export default function App() {
         />
       ) : null}
 
+      {modal === "vpn-wireguard" ? (
+        <DeviceToggleModal
+          title="VPN WireGuard"
+          description="Toggles the WireGuard tunnel on the device (opens the app briefly if needed)."
+          devices={addedAndroid}
+          busy={actionBusy}
+          fetchStatus={getWireguardStatus}
+          statusOnLabel="WireGuard ON"
+          statusOffLabel="WireGuard OFF"
+          onConfirm={runWireguard}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
       {modal === "battery-saver" ? (
         <DeviceToggleModal
           title="Battery saver"
@@ -1530,7 +1598,7 @@ export default function App() {
       {modal === "rotate" ? (
         <DeviceTargetModal
           title="Rotate device"
-          description="Rotates device + screen 90° in the dashboard and turns rotation lock off on the phone."
+          description="Rotates the phone display by 90° (Android) and turns the dashboard device view to match."
           confirmLabel="Rotate 90°"
           devices={addedAndroid}
           busy={actionBusy}

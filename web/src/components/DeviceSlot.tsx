@@ -13,6 +13,8 @@ interface DeviceSlotProps {
   rebooting?: boolean;
   /** Visual rotation of device + screen (degrees, typically 0/90/180/270). */
   rotationDeg?: number;
+  /** When set, blocks interaction and shows a loading veil on the phone. */
+  actionBusyLabel?: string | null;
   focused?: boolean;
   focusDimmed?: boolean;
   onFocusHover?: () => void;
@@ -152,6 +154,7 @@ export function DeviceSlot({
   flash = false,
   rebooting = false,
   rotationDeg = 0,
+  actionBusyLabel = null,
   focused = false,
   focusDimmed = false,
   onFocusHover,
@@ -187,6 +190,7 @@ export function DeviceSlot({
   const appLine = rebooting ? "Rebooting…" : formatAppLine(appName, appVersion, appBuild, appUrl);
   const metaRef = useFitSlotMeta(`${deviceLine}\n${appLine}`);
 
+  const landscapeLayout = rotationDeg % 180 !== 0;
   const slotClass = [
     "device-slot",
     "device-slot--active",
@@ -195,9 +199,11 @@ export function DeviceSlot({
     focusDimmed ? "device-slot--focus-dimmed" : "",
     flash ? "device-slot--flash" : "",
     rebooting ? "device-slot--rebooting" : "",
+    actionBusyLabel ? "device-slot--action-busy" : "",
     dragging ? "device-slot--dragging" : "",
     dropTarget ? "device-slot--drop-target" : "",
-    rotationDeg % 180 !== 0 ? "device-slot--rotated-odd" : "",
+    landscapeLayout ? "device-slot--landscape" : "",
+    rotationDeg === 180 ? "device-slot--rotated-180" : "",
     rotationDeg ? "device-slot--rotated" : "",
   ]
     .filter(Boolean)
@@ -260,27 +266,38 @@ export function DeviceSlot({
         ) : null}
       </header>
       <div className="device-slot__stage">
-        <div
-          className="device-slot__rotate"
-          style={rotationDeg ? { transform: `rotate(${rotationDeg}deg)` } : undefined}
-        >
-          <DeviceStream
-            deviceId={device.id}
-            platform={device.platform}
-            mockupId={device.mockupId ?? "generic-android"}
-            recordingActive={recordingActive}
-          />
-          {flash ? <div className="device-slot__flash" aria-hidden="true" /> : null}
-          {rebooting ? (
-            <div className="device-slot__reboot-veil" aria-live="polite">
-              <span className="device-slot__reboot-label">Rebooting…</span>
-            </div>
-          ) : null}
-          {recording ? (
-            <div className="device-slot__rec-corner" aria-hidden="true">
-              REC
-            </div>
-          ) : null}
+        <div className="device-slot__rotate-host">
+          <div
+            className="device-slot__rotate"
+            style={rotationDeg === 180 ? { transform: "rotate(180deg)" } : undefined}
+          >
+            <DeviceStream
+              deviceId={device.id}
+              platform={device.platform}
+              mockupId={device.mockupId ?? "generic-android"}
+              recordingActive={recordingActive}
+              landscape={landscapeLayout}
+            />
+            {flash ? <div className="device-slot__flash" aria-hidden="true" /> : null}
+            {rebooting ? (
+              <div className="device-slot__reboot-veil" aria-live="polite">
+                <span className="device-slot__reboot-label">Rebooting…</span>
+              </div>
+            ) : null}
+            {actionBusyLabel && !rebooting ? (
+              <div className="device-slot__action-veil" aria-live="polite" aria-busy="true">
+                <div className="device-slot__action-busy">
+                  <span className="device-slot__action-spinner" aria-hidden="true" />
+                  <span className="device-slot__action-label">{actionBusyLabel}</span>
+                </div>
+              </div>
+            ) : null}
+            {recording ? (
+              <div className="device-slot__rec-corner" aria-hidden="true">
+                REC
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </article>

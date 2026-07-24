@@ -29,6 +29,7 @@ SIDEBAR_ACTION_DEFS: list[dict[str, str]] = [
     {"id": "airplane", "label": "Airplane Mode", "group": "Device"},
     {"id": "wifi", "label": "Wi‑Fi", "group": "Device"},
     {"id": "vpn", "label": "VPN", "group": "Device"},
+    {"id": "vpn_wireguard", "label": "VPN WireGuard", "group": "Device"},
     {"id": "battery_saver", "label": "Battery saver", "group": "Device"},
     {"id": "rotate", "label": "Rotate device", "group": "Device"},
     {"id": "disconnect_all", "label": "Disconnect all devices", "group": "Device"},

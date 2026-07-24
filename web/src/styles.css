@@ -845,6 +845,7 @@ body {
   gap: 1.35rem;
   max-width: none;
   padding: 0.25rem 0.15rem;
+  overflow: visible;
 }
 
 @media (max-width: 900px) {
@@ -1132,6 +1133,12 @@ body {
   z-index: 1;
 }
 
+.device-stream__video {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+}
+
 .device-stream:focus-visible {
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
@@ -1146,10 +1153,16 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: fill;
+  object-fit: contain;
+  background: #000;
   display: block;
   pointer-events: none;
   user-select: none;
+}
+
+.phone-mockup--landscape .stream-canvas,
+.phone-mockup--landscape .stream-image {
+  object-fit: contain;
 }
 
 .stream-canvas[hidden],
@@ -1178,23 +1191,67 @@ body {
   overflow: visible;
 }
 
+.device-slot__rotate-host {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .device-slot__rotate {
   position: relative;
   width: 100%;
   transform-origin: center center;
   transition: transform 0.28s ease;
-  will-change: transform;
 }
 
-.device-slot--rotated-odd {
-  width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
-  flex: 0 0 min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
-  max-width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
-  min-width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
+/* Landscape slot: device is actually rotated; scrcpy is already wide. */
+.device-slot--landscape {
+  --phone-w: calc(var(--slot-width) * var(--slot-active-scale));
+  --phone-h: calc(var(--phone-w) / 0.46);
+  width: var(--phone-h);
+  flex: 0 0 var(--phone-h);
+  max-width: var(--phone-h);
+  min-width: var(--phone-h);
+  z-index: 2;
 }
 
-.device-slot--rotated-odd .device-slot__rotate {
-  width: calc(var(--slot-width) * var(--slot-active-scale));
+.device-slot--landscape .device-slot__rotate-host,
+.device-slot--landscape .device-slot__rotate {
+  width: 100%;
+}
+
+.phone-mockup--landscape .phone-mockup__inner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: calc(1 / 0.46);
+  line-height: 0;
+}
+
+.phone-mockup--landscape .phone-mockup__frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Portrait art: height = landscape width so after 90° it fills the box. */
+  height: calc(100% / 0.46);
+  width: auto;
+  max-width: none;
+  transform: translate(-50%, -50%) rotate(90deg);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.phone-mockup--landscape .phone-mockup__screen {
+  z-index: 1;
+}
+
+.device-slot--rotated-180 .device-slot__rotate {
+  transform-origin: center center;
+}
+
+.device-slot--rotated {
+  z-index: 2;
 }
 
 /* Ring drawn on a pseudo-layer so layout/size of the phone never shifts */
@@ -1279,6 +1336,54 @@ body {
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.device-slot__action-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  border-radius: 1.35rem;
+  background: color-mix(in srgb, #0a0a0a 70%, transparent);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+  cursor: wait;
+}
+
+.device-slot__action-busy {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  max-width: 90%;
+  padding: 0.55rem 0.95rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #fff 28%, transparent);
+  background: color-mix(in srgb, #000 50%, transparent);
+  color: #f5f5f5;
+  font-size: 0.85rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.device-slot__action-spinner {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 2px solid color-mix(in srgb, #fff 28%, transparent);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: edge-spin 0.7s linear infinite;
+}
+
+.device-slot__action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.device-slot--action-busy .device-stream {
+  pointer-events: none;
 }
 
 @keyframes screenshot-flash {
