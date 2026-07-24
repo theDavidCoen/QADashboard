@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-07-24
+
+### Fixed
+
+- **Desktop “no devices” when API died** — uvicorn runs as an owned child process instead of a daemon thread, with clean shutdown on exit.
+- **Misleading empty device list** — status pill shows **Backend offline** when `/api/devices` is unreachable (header note prompts restart).
+
 ## [0.2.2] — 2026-07-24
 
 ### Fixed

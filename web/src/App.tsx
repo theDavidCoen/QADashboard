@@ -83,6 +83,7 @@ type ModalKind =
 
 export default function App() {
   const [available, setAvailable] = useState<DeviceInfo[]>([]);
+  const [backendOnline, setBackendOnline] = useState(true);
   const [slots, setSlots] = useState<Array<SlotDevice | null>>([null]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
@@ -240,7 +241,11 @@ export default function App() {
   const refreshDevices = useCallback(async () => {
     try {
       const response = await fetch("/api/devices");
-      if (!response.ok) return;
+      if (!response.ok) {
+        setBackendOnline(false);
+        return;
+      }
+      setBackendOnline(true);
       const payload = (await response.json()) as { devices: DeviceInfo[] };
       setAvailable(payload.devices);
       const liveIds = new Set(payload.devices.map((device) => device.id));
@@ -288,7 +293,7 @@ export default function App() {
         }),
       );
     } catch {
-      /* offline until backend starts */
+      setBackendOnline(false);
     }
   }, []);
 
@@ -980,16 +985,28 @@ export default function App() {
         <div className="sidebar-status">
           <button
             type="button"
-            className={`status-pill status-pill--button ${available.length ? "status-pill--live" : ""}`}
+            className={`status-pill status-pill--button ${
+              !backendOnline ? "status-pill--offline" : available.length ? "status-pill--live" : ""
+            }`}
             onClick={() => setModal("devices")}
-            title="Show connected devices"
+            title={
+              backendOnline
+                ? "Show connected devices"
+                : "API backend is not reachable on this machine"
+            }
           >
             <span className="status-dot" aria-hidden="true" />
-            {available.length
-              ? `${available.length} device${available.length === 1 ? "" : "s"} ready`
-              : "No devices detected"}
+            {!backendOnline
+              ? "Backend offline"
+              : available.length
+                ? `${available.length} device${available.length === 1 ? "" : "s"} ready`
+                : "No devices detected"}
           </button>
-          <p className="header-note">USB · Android (adb) or iOS (libimobiledevice)</p>
+          <p className="header-note">
+            {backendOnline
+              ? "USB · Android (adb) or iOS (libimobiledevice)"
+              : "Restart QA Dashboard — API on :9470 is down"}
+          </p>
         </div>
 
         <nav className="sidebar-actions" aria-label="Device actions">

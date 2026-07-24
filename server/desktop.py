@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import socket
+import subprocess
 import sys
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -19,6 +20,8 @@ ICON_CANDIDATES = (
     Path.home() / ".local" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "qa-dashboard.svg",
     ROOT / "packaging" / "qa-dashboard.svg",
 )
+
+_server_proc: subprocess.Popen[bytes] | None = None
 
 
 def _resolve_icon() -> str | None:
@@ -82,15 +85,54 @@ def _port_in_use(host: str, port: int) -> bool:
         return sock.connect_ex((probe_host, port)) == 0
 
 
-def _run_uvicorn(host: str, port: int) -> None:
-    import uvicorn
+def _stop_owned_server() -> None:
+    global _server_proc
+    proc = _server_proc
+    _server_proc = None
+    if proc is None:
+        return
+    if proc.poll() is not None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=2)
 
-    uvicorn.run("server.main:app", host=host, port=port, reload=False, log_level="info")
+
+def _start_owned_server(host: str, port: int) -> subprocess.Popen[bytes]:
+    """Run uvicorn as a child process so it outlives GTK quirks and stays owned."""
+    global _server_proc
+    _stop_owned_server()
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "server.main:app",
+            "--host",
+            host,
+            "--port",
+            str(port),
+            "--log-level",
+            "info",
+        ],
+        cwd=str(ROOT),
+        stdout=None,
+        stderr=None,
+        start_new_session=True,
+    )
+    _server_proc = proc
+    atexit.register(_stop_owned_server)
+    return proc
 
 
-def _wait_ready(base: str, seconds: float = 30.0) -> bool:
+def _wait_ready(base: str, seconds: float = 30.0, proc: subprocess.Popen[bytes] | None = None) -> bool:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
         if _health_ok(base):
             return True
         time.sleep(0.15)
@@ -99,8 +141,6 @@ def _wait_ready(base: str, seconds: float = 30.0) -> bool:
 
 def _notify(title: str, body: str) -> None:
     try:
-        import subprocess
-
         subprocess.run(
             ["notify-send", "--app-name=QA Dashboard", title, body],
             check=False,
@@ -108,6 +148,31 @@ def _notify(title: str, body: str) -> None:
         )
     except OSError:
         pass
+
+
+def _ensure_server(host: str, port: int, base: str) -> bool:
+    """Prefer an owned child server. Reuse a healthy external one only if present."""
+    if _health_ok(base):
+        # Another instance (e.g. ./start.sh) already serves the API — reuse it.
+        print(f"Reusing already running server at {base}", flush=True)
+        return True
+
+    if _port_in_use(host, port):
+        msg = f"Port {port} is busy but /api/health is not responding."
+        print(msg, file=sys.stderr)
+        _notify("QA Dashboard", msg)
+        return False
+
+    proc = _start_owned_server(host, port)
+    if not _wait_ready(base, proc=proc):
+        code = proc.poll()
+        msg = f"Server did not become ready at {base}" + (f" (exit {code})" if code is not None else "")
+        print(msg, file=sys.stderr)
+        _notify("QA Dashboard", msg)
+        _stop_owned_server()
+        return False
+    print(f"Started API server at {base} (pid {proc.pid})", flush=True)
+    return True
 
 
 def main() -> int:
@@ -141,26 +206,8 @@ def main() -> int:
     host, port = _server_cfg()
     base = _base_url(host, port)
 
-    if _health_ok(base):
-        print(f"Reusing already running server at {base}")
-    elif _port_in_use(host, port):
-        msg = f"Port {port} is busy but /api/health is not responding."
-        print(msg, file=sys.stderr)
-        _notify("QA Dashboard", msg)
+    if not _ensure_server(host, port, base):
         return 1
-    else:
-        thread = threading.Thread(
-            target=_run_uvicorn,
-            args=(host, port),
-            name="qa-dashboard-uvicorn",
-            daemon=True,
-        )
-        thread.start()
-        if not _wait_ready(base):
-            msg = f"Server did not become ready at {base}"
-            print(msg, file=sys.stderr)
-            _notify("QA Dashboard", msg)
-            return 1
 
     window = webview.create_window(
         "QA Dashboard",
@@ -192,6 +239,8 @@ def main() -> int:
         print(msg, file=sys.stderr)
         _notify("QA Dashboard", str(exc))
         return 1
+    finally:
+        _stop_owned_server()
 
     return 0
 

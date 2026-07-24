@@ -263,6 +263,11 @@ body {
   border-color: color-mix(in srgb, var(--live) 35%, var(--border));
 }
 
+.status-pill--offline {
+  color: var(--fg);
+  border-color: color-mix(in srgb, #ef4444 40%, var(--border));
+}
+
 .status-dot {
   width: 0.45rem;
   height: 0.45rem;
@@ -273,6 +278,11 @@ body {
 .status-pill--live .status-dot {
   background: var(--live);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent);
+}
+
+.status-pill--offline .status-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 22%, transparent);
 }
 
 .status-pill--button {
