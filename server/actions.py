@@ -236,6 +236,269 @@ def set_airplane_mode(device: DeviceInfo, enabled: bool) -> ActionResult:
     return ActionResult(device.id, device.name, False, out or f"Airplane mode {mode} failed")
 
 
+def get_wifi(device: DeviceInfo) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    _, setting = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "global", "wifi_on"],
+        timeout=8,
+    )
+    value = setting.strip()
+    if value in {"1", "0"}:
+        return ActionResult(device.id, device.name, True, "on" if value == "1" else "off")
+    code, out = _run(
+        ["adb", "-s", device.id, "shell", "dumpsys", "wifi"],
+        timeout=10,
+    )
+    lower = out.lower()
+    if "wi-fi is enabled" in lower or "wifi is enabled" in lower:
+        return ActionResult(device.id, device.name, True, "on")
+    if "wi-fi is disabled" in lower or "wifi is disabled" in lower:
+        return ActionResult(device.id, device.name, True, "off")
+    return ActionResult(device.id, device.name, False, out or setting or "Wi‑Fi status failed")
+
+
+def set_wifi(device: DeviceInfo, enabled: bool) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    mode = "enable" if enabled else "disable"
+    code, out = _run(
+        ["adb", "-s", device.id, "shell", "svc", "wifi", mode],
+        timeout=10,
+    )
+    flag = "enabled" if enabled else "disabled"
+    code2, out2 = _run(
+        ["adb", "-s", device.id, "shell", "cmd", "wifi", "set-wifi-enabled", flag],
+        timeout=10,
+    )
+    status = get_wifi(device)
+    if status.ok and ((enabled and status.detail == "on") or ((not enabled) and status.detail == "off")):
+        return ActionResult(device.id, device.name, True, status.detail)
+    if code == 0 or code2 == 0:
+        return ActionResult(device.id, device.name, True, "on" if enabled else "off")
+    return ActionResult(device.id, device.name, False, out2 or out or f"Wi‑Fi {mode} failed")
+
+
+def get_battery_saver(device: DeviceInfo) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    _, setting = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "global", "low_power"],
+        timeout=8,
+    )
+    value = setting.strip()
+    if value in {"1", "0"}:
+        return ActionResult(device.id, device.name, True, "on" if value == "1" else "off")
+    code, out = _run(
+        ["adb", "-s", device.id, "shell", "dumpsys", "power"],
+        timeout=10,
+    )
+    if re.search(r"mIsPowerSaveMode\s*=\s*true", out, re.I):
+        return ActionResult(device.id, device.name, True, "on")
+    if re.search(r"mIsPowerSaveMode\s*=\s*false", out, re.I):
+        return ActionResult(device.id, device.name, True, "off")
+    return ActionResult(device.id, device.name, False, out or setting or "Battery saver status failed")
+
+
+def set_battery_saver(device: DeviceInfo, enabled: bool) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    flag = "1" if enabled else "0"
+    _run(
+        ["adb", "-s", device.id, "shell", "settings", "put", "global", "low_power", flag],
+        timeout=8,
+    )
+    _run(
+        ["adb", "-s", device.id, "shell", "settings", "put", "global", "low_power_sticky", flag],
+        timeout=8,
+    )
+    # 1 = POWER_SAVE_MODE, 0 = NO_POWER_SAVE
+    code, out = _run(
+        ["adb", "-s", device.id, "shell", "cmd", "power", "set-mode", flag],
+        timeout=10,
+    )
+    status = get_battery_saver(device)
+    if status.ok and ((enabled and status.detail == "on") or ((not enabled) and status.detail == "off")):
+        return ActionResult(device.id, device.name, True, status.detail)
+    if code == 0:
+        return ActionResult(device.id, device.name, True, "on" if enabled else "off")
+    return ActionResult(device.id, device.name, False, out or f"Battery saver {'on' if enabled else 'off'} failed")
+
+
+def _vpn_iface_up(device_id: str) -> bool:
+    _, out = _run(["adb", "-s", device_id, "shell", "ip", "-o", "link", "show", "up"], timeout=8)
+    for line in out.splitlines():
+        parts = line.split(":")
+        if len(parts) < 2:
+            continue
+        name = parts[1].strip().split("@")[0].strip().lower()
+        if name.startswith(("tun", "ppp", "wg", "vpn")):
+            return True
+    return False
+
+
+def get_vpn(device: DeviceInfo) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    if _vpn_iface_up(device.id):
+        return ActionResult(device.id, device.name, True, "on")
+    _, dump = _run(
+        ["adb", "-s", device.id, "shell", "dumpsys", "connectivity"],
+        timeout=12,
+    )
+    if re.search(r"VPN.*(CONNECTED|CONNECTED_TO_LEGACY|NetworkAgentInfo)", dump, re.I | re.S):
+        if re.search(r"type:\s*VPN[^\n]*(CONNECTED|CONNECTED_TO)", dump, re.I):
+            return ActionResult(device.id, device.name, True, "on")
+    if re.search(r"\bVPN\b", dump) and re.search(r"CONNECTED", dump, re.I):
+        # Heuristic: VPN mentioned with CONNECTED somewhere nearby is noisy; prefer iface.
+        pass
+    _, lockdown = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "secure", "always_on_vpn_lockdown"],
+        timeout=6,
+    )
+    _, app = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "secure", "always_on_vpn_app"],
+        timeout=6,
+    )
+    app_set = app.strip() not in {"", "null", "none"}
+    if lockdown.strip() == "1" and app_set:
+        return ActionResult(device.id, device.name, True, "on")
+    return ActionResult(device.id, device.name, True, "off")
+
+
+def set_vpn(device: DeviceInfo, enabled: bool) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    _, app = _run(
+        ["adb", "-s", device.id, "shell", "settings", "get", "secure", "always_on_vpn_app"],
+        timeout=6,
+    )
+    app_pkg = app.strip()
+    app_set = app_pkg not in {"", "null", "none"}
+
+    if enabled:
+        if app_set:
+            _run(
+                [
+                    "adb",
+                    "-s",
+                    device.id,
+                    "shell",
+                    "settings",
+                    "put",
+                    "secure",
+                    "always_on_vpn_lockdown",
+                    "1",
+                ],
+                timeout=8,
+            )
+            status = get_vpn(device)
+            if status.ok and status.detail == "on":
+                return ActionResult(device.id, device.name, True, "on")
+            return ActionResult(device.id, device.name, True, "always-on VPN enabled")
+        code, out = _run(
+            [
+                "adb",
+                "-s",
+                device.id,
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.net.vpn.SETTINGS",
+            ],
+            timeout=10,
+        )
+        if code == 0:
+            return ActionResult(
+                device.id,
+                device.name,
+                True,
+                "opened VPN settings — complete on device",
+            )
+        return ActionResult(device.id, device.name, False, out or "Open VPN settings failed")
+
+    # Disable: clear always-on lockdown; best-effort bring down VPN ifaces.
+    _run(
+        [
+            "adb",
+            "-s",
+            device.id,
+            "shell",
+            "settings",
+            "put",
+            "secure",
+            "always_on_vpn_lockdown",
+            "0",
+        ],
+        timeout=8,
+    )
+    _, links = _run(
+        ["adb", "-s", device.id, "shell", "ip", "-o", "link", "show", "up"],
+        timeout=8,
+    )
+    for line in links.splitlines():
+        parts = line.split(":")
+        if len(parts) < 2:
+            continue
+        name = parts[1].strip().split("@")[0].strip()
+        if name.lower().startswith(("tun", "ppp", "wg", "vpn")):
+            _run(
+                ["adb", "-s", device.id, "shell", "ip", "link", "set", name, "down"],
+                timeout=6,
+            )
+    status = get_vpn(device)
+    if status.ok and status.detail == "off":
+        return ActionResult(device.id, device.name, True, "off")
+    return ActionResult(
+        device.id,
+        device.name,
+        True,
+        "always-on lockdown off — disconnect VPN on device if still active",
+    )
+
+
+def rotate_device_display(device: DeviceInfo) -> ActionResult:
+    """Turn rotation lock off (auto-rotate on). Dashboard applies the 90° visual rotate."""
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    code, out = _run(
+        ["adb", "-s", device.id, "shell", "settings", "put", "system", "accelerometer_rotation", "1"],
+        timeout=6,
+    )
+    if code != 0:
+        return ActionResult(device.id, device.name, False, out or "Could not disable rotation lock")
+    return ActionResult(device.id, device.name, True, "rotation lock off")
+
+
+def run_wifi(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [set_wifi(d, enabled) for d in _resolve_targets(device_ids)]
+
+
+def run_wifi_status(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [get_wifi(d) for d in _resolve_targets(device_ids)]
+
+
+def run_battery_saver(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [set_battery_saver(d, enabled) for d in _resolve_targets(device_ids)]
+
+
+def run_battery_saver_status(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [get_battery_saver(d) for d in _resolve_targets(device_ids)]
+
+
+def run_vpn(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [set_vpn(d, enabled) for d in _resolve_targets(device_ids)]
+
+
+def run_vpn_status(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [get_vpn(d) for d in _resolve_targets(device_ids)]
+
+
+def run_rotate(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [rotate_device_display(d) for d in _resolve_targets(device_ids)]
+
+
 def normalize_http_url(raw: str) -> str | None:
     text = raw.strip()
     if not text:
@@ -703,6 +966,44 @@ async def airplane_status_async(device_ids: list[str] | None = None) -> list[Act
     return await loop.run_in_executor(None, run_airplane_status, device_ids)
 
 
+async def wifi_async(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_wifi, enabled, device_ids)
+
+
+async def wifi_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_wifi_status, device_ids)
+
+
+async def battery_saver_async(
+    enabled: bool,
+    device_ids: list[str] | None = None,
+) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_battery_saver, enabled, device_ids)
+
+
+async def battery_saver_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_battery_saver_status, device_ids)
+
+
+async def vpn_async(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_vpn, enabled, device_ids)
+
+
+async def vpn_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_vpn_status, device_ids)
+
+
+async def rotate_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_rotate, device_ids)
+
+
 @dataclass(slots=True)
 class LaunchableApp:
     package: str
@@ -722,7 +1023,7 @@ _LAUNCHER_TTL = 90.0
 
 _KNOWN_LABELS = {
     "co.edgesecure.app": "Edge",
-    "co.edgesecure.app.staging": "Edge Staging",
+    "co.edgesecure.app.staging": "Edge, Staging",
     "app.edge.develop": "Edge Develop",
     "com.android.chrome": "Chrome",
     "com.android.settings": "Settings",

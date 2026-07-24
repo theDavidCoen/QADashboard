@@ -257,6 +257,44 @@ class ScrcpyStream:
             return
         self._control_sock.sendall(payload)
 
+    def recv_device_message(self) -> dict | None:
+        """Blocking read of one scrcpy device→client control message."""
+        from .scrcpy_control import (
+            DEVICE_MSG_ACK_CLIPBOARD,
+            DEVICE_MSG_CLIPBOARD,
+            DEVICE_MSG_UHID_OUTPUT,
+            parse_device_message,
+        )
+
+        sock = self._control_sock
+        if self._closed or sock is None:
+            return None
+        try:
+            header = self._recv_exact(sock, 1)
+        except (ConnectionError, OSError, TimeoutError):
+            return None
+        msg_type = header[0]
+        try:
+            if msg_type == DEVICE_MSG_CLIPBOARD:
+                length_buf = self._recv_exact(sock, 4)
+                length = struct.unpack(">I", length_buf)[0]
+                if length > 1024 * 1024:
+                    raise ConnectionError("clipboard message too large")
+                body = length_buf + self._recv_exact(sock, length)
+                return parse_device_message(msg_type, body)
+            if msg_type == DEVICE_MSG_ACK_CLIPBOARD:
+                body = self._recv_exact(sock, 8)
+                return parse_device_message(msg_type, body)
+            if msg_type == DEVICE_MSG_UHID_OUTPUT:
+                meta = self._recv_exact(sock, 4)
+                size = struct.unpack(">H", meta[2:4])[0]
+                if size:
+                    self._recv_exact(sock, size)
+                return {"type": "uhid_output"}
+        except (ConnectionError, OSError, TimeoutError, struct.error):
+            return None
+        return {"type": "unknown", "code": msg_type}
+
     async def close(self) -> None:
         self._closed = True
         for sock in (self._video_sock, self._control_sock, self._listen_sock):

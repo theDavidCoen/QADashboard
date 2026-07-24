@@ -29,11 +29,13 @@ type SettingsSnapshot = {
   arkadeFeaturesEnabled: boolean;
   soundEffectsEnabled: boolean;
   sidebarActions: Record<string, boolean>;
+  sidebarGroupOrder: string[];
   customActions: CustomAdbAction[];
 };
 
 const EDGE_ACTION_IDS = new Set(["start_edge", "start_edge_account", "start_edge_develop"]);
 const ARKADE_ACTION_IDS = new Set(["start_arkade"]);
+const CUSTOM_ADB_GROUP = "Custom ADB";
 
 function snapshotOf(parts: SettingsSnapshot): string {
   return JSON.stringify({
@@ -43,6 +45,7 @@ function snapshotOf(parts: SettingsSnapshot): string {
     arkadeFeaturesEnabled: parts.arkadeFeaturesEnabled,
     soundEffectsEnabled: parts.soundEffectsEnabled,
     sidebarActions: parts.sidebarActions,
+    sidebarGroupOrder: parts.sidebarGroupOrder,
     customActions: parts.customActions.map((item) => ({
       id: item.id,
       label: item.label,
@@ -107,6 +110,7 @@ export function SettingsModal({
   const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(arkadeInit);
   const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(soundInit);
   const [sidebarActions, setSidebarActions] = useState<Record<string, boolean>>({});
+  const [sidebarGroupOrder, setSidebarGroupOrder] = useState<string[]>([]);
   const [sidebarDefs, setSidebarDefs] = useState<SidebarActionDef[]>([]);
   const [customActions, setCustomActions] = useState<CustomAdbAction[]>([]);
   const [hasMasterPassword, setHasMasterPassword] = useState(false);
@@ -133,6 +137,7 @@ export function SettingsModal({
     nextArkade: boolean,
     nextSound: boolean,
     nextFlags: Record<string, boolean>,
+    nextGroupOrder: string[],
     nextCustoms: CustomAdbAction[],
   ) => {
     baselineRef.current = snapshotOf({
@@ -142,18 +147,23 @@ export function SettingsModal({
       arkadeFeaturesEnabled: nextArkade,
       soundEffectsEnabled: nextSound,
       sidebarActions: nextFlags,
+      sidebarGroupOrder: nextGroupOrder,
       customActions: nextCustoms,
     });
   };
 
   const applySettings = (payload: SettingsPayload, asBaseline = true) => {
     const soundOn = payload.soundEffectsEnabled !== false;
+    const groupOrder = payload.sidebarGroupOrder?.length
+      ? payload.sidebarGroupOrder
+      : ["Launch", "Stop", "Capture", "Device", CUSTOM_ADB_GROUP];
     setCapturePath(payload.capturePath);
     setVaultPath(payload.vaultPath);
     setEdgeFeaturesEnabled(payload.edgeFeaturesEnabled === true);
     setArkadeFeaturesEnabled(payload.arkadeFeaturesEnabled === true);
     setSoundEffectsEnabled(soundOn);
     setSidebarActions(payload.sidebarActions);
+    setSidebarGroupOrder(groupOrder);
     setSidebarDefs(payload.sidebarActionDefs);
     setCustomActions(payload.customAdbActions);
     setHasMasterPassword(Boolean(payload.vault?.hasMasterPassword));
@@ -176,6 +186,7 @@ export function SettingsModal({
         payload.arkadeFeaturesEnabled === true,
         soundOn,
         payload.sidebarActions,
+        groupOrder,
         payload.customAdbActions,
       );
     }
@@ -190,6 +201,7 @@ export function SettingsModal({
       arkadeFeaturesEnabled,
       soundEffectsEnabled,
       sidebarActions,
+      sidebarGroupOrder,
       customActions,
     });
     if (current !== baselineRef.current) return true;
@@ -203,6 +215,7 @@ export function SettingsModal({
     arkadeFeaturesEnabled,
     soundEffectsEnabled,
     sidebarActions,
+    sidebarGroupOrder,
     customActions,
     newMaster,
     currentMaster,
@@ -261,6 +274,7 @@ export function SettingsModal({
         arkadeFeaturesEnabled,
         soundEffectsEnabled,
         sidebarActions,
+        sidebarGroupOrder,
         customAdbActions: customActions,
       });
       applySettings(payload, true);
@@ -371,6 +385,26 @@ export function SettingsModal({
     return acc;
   }, {});
 
+  const orderedToggleGroups = useMemo(() => {
+    const names = sidebarGroupOrder.filter((name) => name !== CUSTOM_ADB_GROUP && groups[name]);
+    for (const name of Object.keys(groups)) {
+      if (!names.includes(name)) names.push(name);
+    }
+    return names;
+  }, [sidebarGroupOrder, groups]);
+
+  const moveGroup = (index: number, delta: number) => {
+    setSidebarGroupOrder((prev) => {
+      const next = [...prev];
+      const target = index + delta;
+      if (target < 0 || target >= next.length) return prev;
+      const tmp = next[index];
+      next[index] = next[target];
+      next[target] = tmp;
+      return next;
+    });
+  };
+
   const edgeActionDefs = sidebarDefs.filter((def) => EDGE_ACTION_IDS.has(def.id));
   const arkadeActionDefs = sidebarDefs.filter((def) => ARKADE_ACTION_IDS.has(def.id));
 
@@ -419,14 +453,51 @@ export function SettingsModal({
             <section className="settings-section">
               <h4>Sidebar actions</h4>
               <p className="picker-empty">Choose which buttons appear in the left sidebar.</p>
-              {Object.keys(groups).length === 0 ? (
+
+              <p className="settings-group-label">Group order</p>
+              <p className="settings-hint" style={{ marginBottom: "0.55rem" }}>
+                Move groups up or down to change their position in the sidebar.
+              </p>
+              {sidebarGroupOrder.length === 0 ? (
+                <p className="picker-empty">Loading…</p>
+              ) : (
+                <ul className="settings-group-order">
+                  {sidebarGroupOrder.map((group, index) => (
+                    <li key={group} className="settings-group-order__row">
+                      <span className="settings-group-order__name">{group}</span>
+                      <span className="settings-group-order__actions">
+                        <button
+                          type="button"
+                          className="modal-btn modal-btn--ghost settings-group-order__btn"
+                          disabled={saving || index === 0}
+                          onClick={() => moveGroup(index, -1)}
+                          aria-label={`Move ${group} up`}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="modal-btn modal-btn--ghost settings-group-order__btn"
+                          disabled={saving || index === sidebarGroupOrder.length - 1}
+                          onClick={() => moveGroup(index, 1)}
+                          aria-label={`Move ${group} down`}
+                        >
+                          ↓
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {orderedToggleGroups.length === 0 ? (
                 <p className="picker-empty">Loading action list…</p>
               ) : (
-                Object.entries(groups).map(([group, defs]) => (
+                orderedToggleGroups.map((group) => (
                   <div key={group} className="settings-flags-group">
                     <p className="settings-group-label">{group}</p>
                     <ToggleList>
-                      {defs.map((def) => (
+                      {(groups[group] ?? []).map((def) => (
                         <ToggleSwitch
                           key={def.id}
                           label={def.label}
@@ -755,6 +826,55 @@ export function SettingsModal({
                   )}
                 </div>
               </details>
+            </section>
+
+            <section className="settings-section settings-section--shortcuts">
+              <h4>Keyboard shortcuts</h4>
+              <dl className="settings-shortcuts">
+                <div>
+                  <dt>Hold Space 1s</dt>
+                  <dd>Screenshot</dd>
+                </div>
+                <div>
+                  <dt>Shift+Space</dt>
+                  <dd>Start / stop video recording</dd>
+                </div>
+                <div>
+                  <dt>Esc</dt>
+                  <dd>
+                    Stop Rec · exit Focus fullscreen · exit Focus (when not over a stream) ·
+                    device Back when hovering a stream
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ctrl/⌘+C · V · X</dt>
+                  <dd>Clipboard sync while a stream is armed (hover/click)</dd>
+                </div>
+                <div>
+                  <dt>Ctrl/⌘+click</dt>
+                  <dd>Focus Mode optional fullscreen</dd>
+                </div>
+                <div>
+                  <dt>Hover stream</dt>
+                  <dd>Arm keyboard (type to device)</dd>
+                </div>
+                <div>
+                  <dt>Click / drag stream</dt>
+                  <dd>Touch input</dd>
+                </div>
+                <div>
+                  <dt>Enter · Backspace · Home</dt>
+                  <dd>Device keys while armed</dd>
+                </div>
+                <div>
+                  <dt>Meta (Win/⌘)</dt>
+                  <dd>Android Recents / app switch (while armed)</dd>
+                </div>
+                <div>
+                  <dt>Drag header handle</dt>
+                  <dd>Reorder devices</dd>
+                </div>
+              </dl>
             </section>
           </div>
         </div>

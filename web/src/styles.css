@@ -15,7 +15,7 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --slot-width: min(340px, calc((100dvh - 9.5rem) * 0.46));
   --slot-active-scale: 0.9;
-  --slot-header-height: 3.15rem;
+  --slot-header-height: 3.35rem;
   --slot-footer-height: 0;
   --slot-max-height: calc(100dvh - 8.5rem);
   --sidebar-width: 16.75rem;
@@ -635,6 +635,104 @@ body {
   z-index: 3;
 }
 
+.workspace-focus-coach {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  z-index: 7;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: min(36rem, calc(100% - 2rem));
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, #00d4ff 40%, var(--border));
+  background: color-mix(in srgb, #00d4ff 14%, var(--surface));
+  color: color-mix(in srgb, #00d4ff 70%, var(--fg));
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-align: center;
+  box-shadow: 0 8px 28px color-mix(in srgb, #00d4ff 18%, transparent);
+  pointer-events: none;
+}
+
+/* Immersive Focus: enlarge + center even if browser Fullscreen API is denied */
+.app:has(.workspace--focus-expanded) {
+  grid-template-columns: 1fr;
+}
+
+.app:has(.workspace--focus-expanded) .app-sidebar {
+  display: none;
+}
+
+.workspace--focus-expanded {
+  --slot-width: min(520px, calc((100dvh - 4.5rem) * 0.58));
+  --slot-active-scale: 1;
+  position: relative;
+  background: var(--bg);
+  min-height: 100%;
+}
+
+.workspace--focus-expanded:fullscreen,
+.workspace--focus-expanded:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 1.25rem 1.5rem 3.5rem;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+.workspace--focus-expanded .workspace-head,
+.workspace--focus-expanded .add-device-wrap,
+.workspace--focus-expanded .device-slot--empty,
+.workspace--focus-expanded .device-slot--focus-dimmed {
+  display: none !important;
+}
+
+.workspace--focus-expanded .device-strip-outer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 0.5rem;
+  z-index: 4;
+}
+
+.workspace--focus-expanded .device-strip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+}
+
+.workspace--focus-expanded .device-slot--focused {
+  z-index: 5;
+  filter: none;
+  opacity: 1;
+  transition:
+    width 0.22s ease,
+    max-width 0.22s ease,
+    min-width 0.22s ease,
+    opacity 0.2s ease;
+}
+
+.workspace--focus-expanded .workspace-focus-coach {
+  bottom: 1.35rem;
+}
+
+.workspace--focus-expanded::before {
+  background: color-mix(in srgb, #000 55%, transparent);
+  backdrop-filter: blur(10px) brightness(0.65);
+  -webkit-backdrop-filter: blur(10px) brightness(0.65);
+}
+
 .workspace-rec-badge {
   display: inline-flex;
   align-items: center;
@@ -795,20 +893,24 @@ body {
 
 .device-slot__header {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.5rem;
+  height: var(--slot-header-height);
   min-height: var(--slot-header-height);
+  max-height: var(--slot-header-height);
   margin: 0;
-  padding: 0.2rem 0.15rem 0.25rem;
+  padding: 0.12rem 0.15rem 0.15rem;
   border-bottom: none;
   background: transparent;
-  overflow: visible;
-  flex: 0 0 auto;
+  overflow: hidden;
+  flex: 0 0 var(--slot-header-height);
+  box-sizing: border-box;
 }
 
 .device-slot__drag-handle {
   flex: 0 0 auto;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -857,25 +959,33 @@ body {
 .device-slot__header--spacer {
   visibility: hidden;
   pointer-events: none;
-  min-height: var(--slot-header-height);
   height: var(--slot-header-height);
+  min-height: var(--slot-header-height);
+  max-height: var(--slot-header-height);
+  flex: 0 0 var(--slot-header-height);
+  box-sizing: border-box;
 }
 
 .device-slot__meta {
   min-width: 0;
-  flex: 1;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 0.18rem;
+  justify-content: center;
+  gap: 0.1em;
+  overflow: hidden;
+  font-size: 0.95rem;
 }
 
 .device-slot__line {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1em;
   font-weight: 700;
   letter-spacing: -0.015em;
-  line-height: 1.25;
+  line-height: 1.2;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
@@ -1062,10 +1172,33 @@ body {
 .device-slot__stage {
   position: relative;
   width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: visible;
+}
+
+.device-slot__rotate {
+  position: relative;
+  width: 100%;
+  transform-origin: center center;
+  transition: transform 0.28s ease;
+  will-change: transform;
+}
+
+.device-slot--rotated-odd {
+  width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
+  flex: 0 0 min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
+  max-width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
+  min-width: min(72vh, calc(var(--slot-width) * var(--slot-active-scale) * 1.95));
+}
+
+.device-slot--rotated-odd .device-slot__rotate {
+  width: calc(var(--slot-width) * var(--slot-active-scale));
 }
 
 /* Ring drawn on a pseudo-layer so layout/size of the phone never shifts */
-.device-slot--recording .device-slot__stage::after {
+.device-slot--recording .device-slot__rotate::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1079,7 +1212,7 @@ body {
   z-index: 3;
 }
 
-.device-slot--focused .device-slot__stage::after {
+.device-slot--focused .device-slot__rotate::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1093,7 +1226,7 @@ body {
   z-index: 3;
 }
 
-.device-slot--focused.device-slot--recording .device-slot__stage::after {
+.device-slot--focused.device-slot--recording .device-slot__rotate::after {
   box-shadow:
     0 0 0 2px color-mix(in srgb, #00d4ff 90%, transparent),
     0 0 0 6px color-mix(in srgb, #ef4444 35%, transparent),
@@ -1756,6 +1889,46 @@ body {
   color: var(--muted);
 }
 
+.settings-section--shortcuts {
+  margin-top: 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in srgb, var(--fg) 10%, var(--border));
+}
+
+.settings-section--shortcuts h4 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 0 0 0.45rem;
+  color: var(--muted);
+}
+
+.settings-shortcuts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.settings-shortcuts > div {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, 9.5rem) 1fr;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+}
+
+.settings-shortcuts dt {
+  margin: 0;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--fg) 72%, var(--muted));
+}
+
+.settings-shortcuts dd {
+  margin: 0;
+}
+
 .settings-group-label {
   margin: 0.85rem 0 0.4rem;
   font-size: 0.72rem;
@@ -1763,6 +1936,51 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.settings-group-order {
+  list-style: none;
+  margin: 0 0 0.85rem;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--fg) 12%, var(--border));
+  border-radius: 0.55rem;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.settings-group-order__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+}
+
+.settings-group-order__row:nth-child(even) {
+  background: color-mix(in srgb, var(--fg) 5%, var(--surface));
+}
+
+.settings-group-order__row:last-child {
+  border-bottom: none;
+}
+
+.settings-group-order__name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.settings-group-order__actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.settings-group-order__btn {
+  min-width: 2rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
 }
 
 .settings-subheading {

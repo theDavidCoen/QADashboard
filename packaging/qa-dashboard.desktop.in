@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=QA Dashboard
+Comment=Multi-device Android/iOS QA testing dashboard
+Exec=@ROOT@/start-app.sh
+Icon=qa-dashboard
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+Keywords=qa;android;ios;scrcpy;adb;testing;

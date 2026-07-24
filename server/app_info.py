@@ -39,6 +39,7 @@ _IOS_LISTING_TTL = 30.0
 @dataclass(slots=True)
 class AppDisplay:
     name: str | None = None
+    version: str | None = None
     build: str | None = None
     url: str | None = None
     kind: str | None = None  # "native" | "pwa" | "browser"
@@ -47,6 +48,7 @@ class AppDisplay:
     def to_dict(self) -> dict:
         return {
             "name": self.name,
+            "version": self.version,
             "build": self.build,
             "url": self.url,
             "kind": self.kind,
@@ -57,11 +59,43 @@ class AppDisplay:
     def label(self) -> str | None:
         if self.kind == "pwa" and self.name and self.url:
             return f"{self.name} · {self.url}"
+        if self.name and self.version and self.build:
+            return f"{self.name} {self.version}, build {self.build}"
         if self.name and self.build:
             return f"{self.name}, build {self.build}"
+        if self.name and self.version:
+            return f"{self.name} {self.version}"
         if self.name:
             return self.name
         return None
+
+
+def _split_version_build(
+    version_name: str | None, version_code: str | None
+) -> tuple[str | None, str | None]:
+    """Prefer versionName as marketing version and versionCode as build id."""
+    version = version_name.strip() if version_name and version_name.strip() else None
+    build = None
+    if version_code and version_code.strip():
+        code = version_code.strip()
+        # Edge-style builds are long numeric codes; keep shorter codes too if no versionName.
+        if len(code) >= 6 or not version:
+            build = code
+    if not build and version and version.isdigit() and len(version) >= 6:
+        # legacy: only versionCode was available and stored as versionName-less build
+        build = version
+        version = None
+    return version, build
+
+
+def _staging_display_name(name: str, package: str) -> str:
+    if "staging" not in package.lower():
+        return name
+    if re.search(r",\s*[Ss]taging\b", name):
+        return name
+    if re.search(r"\b[Ss]taging\b", name):
+        return re.sub(r"\s+[Ss]taging\b", ", Staging", name, count=1)
+    return f"{name}, Staging"
 
 
 def _run(cmd: list[str], timeout: float = 3.0) -> str:
@@ -230,7 +264,7 @@ def _config_pwa_for_host(host: str) -> dict | None:
 def _known_package_name(package: str) -> str | None:
     known = {
         "co.edgesecure.app": "Edge",
-        "co.edgesecure.app.staging": "Edge Staging",
+        "co.edgesecure.app.staging": "Edge, Staging",
         "app.edge.develop": "Edge Develop",
         "com.android.chrome": "Chrome",
     }
@@ -315,14 +349,12 @@ def _android_foreground_app_uncached(serial: str) -> AppDisplay:
     name = _known_package_name(effective)
     if not name:
         name = effective.split(".")[-1]
-    build = None
-    if version_code and len(version_code) >= 6:
-        build = version_code
-    elif version_name:
-        build = version_name
+    name = _staging_display_name(name or effective.split(".")[-1], effective)
+    version, build = _split_version_build(version_name, version_code)
     _ = activity
     return AppDisplay(
-        name=name or effective.split(".")[-1],
+        name=name,
+        version=version,
         build=build,
         kind="native",
         package=effective,
@@ -337,10 +369,15 @@ def _android_configured_fallback(serial: str) -> AppDisplay:
                 continue
             version_name, version_code = _package_versions(serial, package)
             name = group.get("label") or group.get("name") or group_name.title()
-            if "staging" in package and "staging" not in name.lower():
-                name = f"{name} Staging"
-            build = version_code if version_code and len(version_code) >= 6 else version_name
-            return AppDisplay(name=name, build=build, kind="native", package=package)
+            name = _staging_display_name(str(name), package)
+            version, build = _split_version_build(version_name, version_code)
+            return AppDisplay(
+                name=name,
+                version=version,
+                build=build,
+                kind="native",
+                package=package,
+            )
     return AppDisplay()
 
 
@@ -371,7 +408,12 @@ def ios_configured_app(udid: str) -> AppDisplay:
             parts = [p.strip().strip('"') for p in line.split(",")]
             version = parts[2] if len(parts) >= 3 else None
             name = labels.get(package, "App")
-            if "staging" in package and "staging" not in name.lower():
-                name = f"{name} Staging"
-            return AppDisplay(name=name, build=version, kind="native", package=package)
+            name = _staging_display_name(str(name), package)
+            return AppDisplay(
+                name=name,
+                version=version,
+                build=None,
+                kind="native",
+                package=package,
+            )
     return AppDisplay()

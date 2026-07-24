@@ -1,4 +1,4 @@
-import type { DragEvent } from "react";
+import { useLayoutEffect, useRef, type DragEvent } from "react";
 import { DeviceStream } from "./DeviceStream";
 import type { SlotDevice } from "../types";
 
@@ -11,10 +11,14 @@ interface DeviceSlotProps {
   recordingActive?: boolean;
   flash?: boolean;
   rebooting?: boolean;
+  /** Visual rotation of device + screen (degrees, typically 0/90/180/270). */
+  rotationDeg?: number;
   focused?: boolean;
   focusDimmed?: boolean;
   onFocusHover?: () => void;
   onFocusLock?: () => void;
+  /** When set, Ctrl/⌘+click on the slot opens Focus fullscreen. */
+  onFocusExpand?: () => void;
   /** Enable drag handle when more than one device is connected. */
   canReorder?: boolean;
   dragging?: boolean;
@@ -26,38 +30,60 @@ interface DeviceSlotProps {
   onDragEndSlot?: () => void;
 }
 
-function resolveApp(device: SlotDevice): { name: string | null; build: string | null; url: string | null } {
+function resolveApp(device: SlotDevice): {
+  name: string | null;
+  version: string | null;
+  build: string | null;
+  url: string | null;
+} {
   const app = device.app;
   let name = app?.name?.trim() || null;
+  let version = app?.version?.trim() || null;
   let build = app?.build?.trim() || null;
   let url = app?.url?.trim() || null;
 
-  if (name) return { name, build, url };
+  if (name) return { name, version, build, url };
 
   const label = device.appLabel?.trim() ?? "";
-  if (!label) return { name: null, build, url };
+  if (!label) return { name: null, version, build, url };
 
   const urlParts = label.split(/\s*[·|]\s+/);
   if (urlParts.length >= 2 && /https?:\/\//.test(urlParts[1])) {
-    return { name: urlParts[0].trim(), build, url: urlParts[1].trim() };
+    return { name: urlParts[0].trim(), version, build, url: urlParts[1].trim() };
   }
+
+  // "Edge 4.50.0, build 26072201" / "Edge, Staging 4.50.0, build 26072201"
+  const versionBuild = label.match(
+    /^(.*?)\s+(\d+(?:\.\d+)+(?:-[A-Za-z0-9.]+)?),\s*build\s+(\S+)\s*$/i,
+  );
+  if (versionBuild) {
+    return {
+      name: versionBuild[1].trim() || null,
+      version: versionBuild[2].trim() || version,
+      build: versionBuild[3].trim() || build,
+      url,
+    };
+  }
+
   const buildMatch = label.match(/^(.*?),\s*build\s+([^,]+)(?:,.*)?$/i);
   if (buildMatch) {
     return {
       name: buildMatch[1].trim() || null,
+      version,
       build: buildMatch[2].trim() || build,
       url,
     };
   }
   const onlyBuild = label.match(/^build\s+(.+)$/i);
   if (onlyBuild) {
-    return { name: null, build: onlyBuild[1].trim() || build, url };
+    return { name: null, version, build: onlyBuild[1].trim() || build, url };
   }
-  return { name: label, build, url };
+  return { name: label, version, build, url };
 }
 
 function formatAppLine(
   name: string | null,
+  version: string | null,
   build: string | null,
   url: string | null,
 ): string {
@@ -65,10 +91,56 @@ function formatAppLine(
     const host = url.replace(/^https?:\/\//, "");
     return name ? `${name}, ${host}` : host;
   }
+  if (name && version && build) return `${name} ${version}, build ${build}`;
   if (name && build) return `${name}, build ${build}`;
+  if (name && version) return `${name} ${version}`;
   if (name) return name;
   if (build) return `build ${build}`;
+  if (version) return version;
   return "unknown";
+}
+
+/** Shrink meta font so Device/App copy stays inside the fixed header (devices stay aligned). */
+function useFitSlotMeta(textKey: string) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const maxPx = 15.2; // ~0.95rem
+    const minPx = 9;
+    const step = 0.5;
+
+    const overflows = () => {
+      if (el.scrollHeight > el.clientHeight + 0.5) return true;
+      for (const line of el.querySelectorAll<HTMLElement>(".device-slot__line")) {
+        if (line.scrollWidth > line.clientWidth + 0.5) return true;
+      }
+      return false;
+    };
+
+    const fit = () => {
+      let size = maxPx;
+      el.style.fontSize = `${size}px`;
+      void el.offsetHeight;
+      while (size > minPx && overflows()) {
+        size -= step;
+        el.style.fontSize = `${size}px`;
+      }
+    };
+
+    fit();
+    const ro = new ResizeObserver(() => {
+      // Reset then refit so growing the slot can restore a larger font.
+      el.style.fontSize = `${maxPx}px`;
+      fit();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [textKey]);
+
+  return ref;
 }
 
 export function DeviceSlot({
@@ -79,10 +151,12 @@ export function DeviceSlot({
   recordingActive = false,
   flash = false,
   rebooting = false,
+  rotationDeg = 0,
   focused = false,
   focusDimmed = false,
   onFocusHover,
   onFocusLock,
+  onFocusExpand,
   canReorder = false,
   dragging = false,
   dropTarget = false,
@@ -108,9 +182,10 @@ export function DeviceSlot({
     );
   }
 
-  const { name: appName, build: appBuild, url: appUrl } = resolveApp(device);
+  const { name: appName, version: appVersion, build: appBuild, url: appUrl } = resolveApp(device);
   const deviceLine = device.osVersion ? `${device.name} · ${device.osVersion}` : device.name;
-  const appLine = rebooting ? "Rebooting…" : formatAppLine(appName, appBuild, appUrl);
+  const appLine = rebooting ? "Rebooting…" : formatAppLine(appName, appVersion, appBuild, appUrl);
+  const metaRef = useFitSlotMeta(`${deviceLine}\n${appLine}`);
 
   const slotClass = [
     "device-slot",
@@ -122,6 +197,8 @@ export function DeviceSlot({
     rebooting ? "device-slot--rebooting" : "",
     dragging ? "device-slot--dragging" : "",
     dropTarget ? "device-slot--drop-target" : "",
+    rotationDeg % 180 !== 0 ? "device-slot--rotated-odd" : "",
+    rotationDeg ? "device-slot--rotated" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -132,7 +209,16 @@ export function DeviceSlot({
       onPointerEnter={onFocusHover}
       onPointerDownCapture={(event) => {
         if (event.button !== 0) return;
-        onFocusLock?.();
+        if (onFocusLock) {
+          onFocusLock();
+          return;
+        }
+        // Optional immersive view — normal clicks still reach DeviceStream.
+        if (onFocusExpand && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          event.stopPropagation();
+          onFocusExpand();
+        }
       }}
       onDragOver={canReorder ? onDragOverSlot : undefined}
       onDragLeave={canReorder ? onDragLeaveSlot : undefined}
@@ -152,11 +238,11 @@ export function DeviceSlot({
             <span className="device-slot__drag-grip" aria-hidden="true" />
           </button>
         ) : null}
-        <div className="device-slot__meta">
-          <p className="device-slot__line" title={device.model}>
+        <div className="device-slot__meta" ref={metaRef}>
+          <p className="device-slot__line" title={`${deviceLine}${device.model ? ` · ${device.model}` : ""}`}>
             <span className="device-slot__label">Device:</span> {deviceLine}
           </p>
-          <p className="device-slot__line" title={rebooting ? undefined : (appUrl ?? undefined)}>
+          <p className="device-slot__line" title={rebooting ? undefined : appLine}>
             <span className="device-slot__label">App:</span> {appLine}
           </p>
         </div>
@@ -174,23 +260,28 @@ export function DeviceSlot({
         ) : null}
       </header>
       <div className="device-slot__stage">
-        <DeviceStream
-          deviceId={device.id}
-          platform={device.platform}
-          mockupId={device.mockupId ?? "generic-android"}
-          recordingActive={recordingActive}
-        />
-        {flash ? <div className="device-slot__flash" aria-hidden="true" /> : null}
-        {rebooting ? (
-          <div className="device-slot__reboot-veil" aria-live="polite">
-            <span className="device-slot__reboot-label">Rebooting…</span>
-          </div>
-        ) : null}
-        {recording ? (
-          <div className="device-slot__rec-corner" aria-hidden="true">
-            REC
-          </div>
-        ) : null}
+        <div
+          className="device-slot__rotate"
+          style={rotationDeg ? { transform: `rotate(${rotationDeg}deg)` } : undefined}
+        >
+          <DeviceStream
+            deviceId={device.id}
+            platform={device.platform}
+            mockupId={device.mockupId ?? "generic-android"}
+            recordingActive={recordingActive}
+          />
+          {flash ? <div className="device-slot__flash" aria-hidden="true" /> : null}
+          {rebooting ? (
+            <div className="device-slot__reboot-veil" aria-live="polite">
+              <span className="device-slot__reboot-label">Rebooting…</span>
+            </div>
+          ) : null}
+          {recording ? (
+            <div className="device-slot__rec-corner" aria-hidden="true">
+              REC
+            </div>
+          ) : null}
+        </div>
       </div>
     </article>
   );

@@ -27,12 +27,57 @@ SIDEBAR_ACTION_DEFS: list[dict[str, str]] = [
     {"id": "video", "label": "Video recording", "group": "Capture"},
     {"id": "reboot", "label": "Reboot device", "group": "Device"},
     {"id": "airplane", "label": "Airplane Mode", "group": "Device"},
+    {"id": "wifi", "label": "Wi‑Fi", "group": "Device"},
+    {"id": "vpn", "label": "VPN", "group": "Device"},
+    {"id": "battery_saver", "label": "Battery saver", "group": "Device"},
+    {"id": "rotate", "label": "Rotate device", "group": "Device"},
     {"id": "disconnect_all", "label": "Disconnect all devices", "group": "Device"},
 ]
+
+CUSTOM_ADB_GROUP = "Custom ADB"
+
+SIDEBAR_GROUP_ORDER_DEFAULT: list[str] = [
+    "Launch",
+    "Stop",
+    "Capture",
+    "Device",
+    CUSTOM_ADB_GROUP,
+]
+
+
+def _known_sidebar_groups() -> list[str]:
+    groups: list[str] = []
+    for item in SIDEBAR_ACTION_DEFS:
+        name = item["group"]
+        if name not in groups:
+            groups.append(name)
+    if CUSTOM_ADB_GROUP not in groups:
+        groups.append(CUSTOM_ADB_GROUP)
+    return groups
 
 
 def _default_sidebar_flags() -> dict[str, bool]:
     return {item["id"]: True for item in SIDEBAR_ACTION_DEFS}
+
+
+def _normalize_group_order(raw: object) -> list[str]:
+    known = _known_sidebar_groups()
+    # Prefer default order for known groups, then any extras from defs.
+    preferred = [g for g in SIDEBAR_GROUP_ORDER_DEFAULT if g in known]
+    for g in known:
+        if g not in preferred:
+            preferred.append(g)
+    ordered: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str):
+                name = item.strip()
+                if name in preferred and name not in ordered:
+                    ordered.append(name)
+    for name in preferred:
+        if name not in ordered:
+            ordered.append(name)
+    return ordered
 
 
 def _ensure_dir() -> None:
@@ -51,6 +96,7 @@ def _defaults() -> dict:
         "arkadeFeaturesEnabled": True,
         "soundEffectsEnabled": True,
         "sidebarActions": _default_sidebar_flags(),
+        "sidebarGroupOrder": list(SIDEBAR_GROUP_ORDER_DEFAULT),
         "customAdbActions": [],
     }
 
@@ -78,6 +124,7 @@ def _normalize(data: dict) -> dict:
             if key in flags and isinstance(value, bool):
                 flags[key] = value
     base["sidebarActions"] = flags
+    base["sidebarGroupOrder"] = _normalize_group_order(data.get("sidebarGroupOrder"))
 
     customs: list[dict] = []
     for item in data.get("customAdbActions") or []:
@@ -124,6 +171,8 @@ def save_settings(patch: dict) -> dict:
             **merged.get("sidebarActions", {}),
             **{k: bool(v) for k, v in patch["sidebarActions"].items()},
         }
+    if "sidebarGroupOrder" in patch:
+        merged["sidebarGroupOrder"] = _normalize_group_order(patch["sidebarGroupOrder"])
     if "customAdbActions" in patch and isinstance(patch["customAdbActions"], list):
         merged["customAdbActions"] = patch["customAdbActions"]
     normalized = _normalize(merged)

@@ -27,6 +27,22 @@ interface DeviceStreamProps {
 /** Which device currently receives PC keyboard input (hover or last click). */
 let keyboardTargetId: string | null = null;
 
+type TextInjector = (text: string) => void;
+const textInjectors = new Map<string, TextInjector>();
+
+export function getKeyboardTargetId(): string | null {
+  return keyboardTargetId;
+}
+
+/** Inject plain text into the armed device (used for short Space after shortcut hold). */
+export function injectTextToKeyboardTarget(text: string): boolean {
+  if (!keyboardTargetId || !text) return false;
+  const inject = textInjectors.get(keyboardTargetId);
+  if (!inject) return false;
+  inject(text);
+  return true;
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
@@ -223,6 +239,29 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
       if (keyboardTargetId !== deviceId) return;
       if (isEditableTarget(event.target)) return;
 
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === "v") {
+          event.preventDefault();
+          void (async () => {
+            try {
+              const text = await navigator.clipboard.readText();
+              if (!text) return;
+              sendControl({ type: "clipboard_set", text, paste: true });
+            } catch {
+              /* clipboard permission denied */
+            }
+          })();
+          return;
+        }
+        if (key === "c" || key === "x") {
+          event.preventDefault();
+          sendControl({ type: "clipboard_get", copyKey: key === "x" ? "cut" : "copy" });
+          return;
+        }
+      }
+
       if (event.key === "Escape") {
         if (event.defaultPrevented) return;
         // Esc → BACK only while the pointer is on this stream; otherwise App
@@ -232,6 +271,8 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
         event.preventDefault();
         return;
       }
+      // Space / Shift+Space are App-level shortcuts (hold → screenshot, Shift → Rec).
+      if (event.code === "Space" || event.key === " ") return;
       if (event.key === "Home") {
         sendKey(KEYCODE_HOME);
         event.preventDefault();
@@ -258,6 +299,15 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
       }
     };
 
+    const onPaste = (event: ClipboardEvent) => {
+      if (keyboardTargetId !== deviceId) return;
+      if (isEditableTarget(event.target)) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      event.preventDefault();
+      sendControl({ type: "clipboard_set", text, paste: true });
+    };
+
     const socket = new WebSocket(wsUrl(deviceId));
     socketRef.current = socket;
     socket.binaryType = "arraybuffer";
@@ -270,7 +320,17 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
 
       if (typeof event.data === "string") {
         try {
-          const payload = JSON.parse(event.data) as { error?: string };
+          const payload = JSON.parse(event.data) as {
+            error?: string;
+            type?: string;
+            text?: string;
+          };
+          if (payload.type === "clipboard" && typeof payload.text === "string") {
+            void navigator.clipboard.writeText(payload.text).catch(() => {
+              /* ignore */
+            });
+            return;
+          }
           if (payload.error) setStatus(payload.error);
         } catch {
           setStatus(event.data);
@@ -319,11 +379,15 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
     stream.addEventListener("pointerenter", onPointerEnter);
     stream.addEventListener("pointerleave", onPointerLeave);
     stream.addEventListener("blur", onBlur);
+    stream.addEventListener("paste", onPaste);
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("paste", onPaste, true);
+    textInjectors.set(deviceId, (text) => sendControl({ type: "text", text }));
 
     return () => {
       closed = true;
       if (keyboardTargetId === deviceId) keyboardTargetId = null;
+      textInjectors.delete(deviceId);
       stream.removeEventListener("pointerdown", onPointerDown);
       stream.removeEventListener("pointermove", onPointerMove);
       stream.removeEventListener("pointerup", onPointerUp);
@@ -331,7 +395,9 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
       stream.removeEventListener("pointerenter", onPointerEnter);
       stream.removeEventListener("pointerleave", onPointerLeave);
       stream.removeEventListener("blur", onBlur);
+      stream.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("paste", onPaste, true);
       stream.classList.remove("is-keyboard-hot");
       socket.close();
       socketRef.current = null;
@@ -429,6 +495,20 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
       if (keyboardTargetId !== deviceId) return;
       if (isEditableTarget(event.target)) return;
 
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && !event.altKey && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        void (async () => {
+          try {
+            const text = await navigator.clipboard.readText();
+            if (text) sendControl({ type: "text", text });
+          } catch {
+            /* ignore */
+          }
+        })();
+        return;
+      }
+
       if (event.key === "Escape") {
         if (event.defaultPrevented) return;
         if (recordingActiveRef.current || !stream.matches(":hover")) return;
@@ -436,6 +516,8 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
         event.preventDefault();
         return;
       }
+      // Space / Shift+Space are App-level shortcuts (hold → screenshot, Shift → Rec).
+      if (event.code === "Space" || event.key === " ") return;
       if (event.key === "Home") {
         sendControl({ type: "key", action: 0, keycode: KEYCODE_HOME });
         event.preventDefault();
@@ -455,6 +537,15 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
         sendControl({ type: "text", text: event.key });
         event.preventDefault();
       }
+    };
+
+    const onPaste = (event: ClipboardEvent) => {
+      if (keyboardTargetId !== deviceId) return;
+      if (isEditableTarget(event.target)) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      event.preventDefault();
+      sendControl({ type: "text", text });
     };
 
     const applyScreenSize = (width: number, height: number) => {
@@ -530,11 +621,15 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
     stream.addEventListener("pointerenter", onPointerEnter);
     stream.addEventListener("pointerleave", onPointerLeave);
     stream.addEventListener("blur", onBlur);
+    stream.addEventListener("paste", onPaste);
     window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("paste", onPaste, true);
+    textInjectors.set(deviceId, (text) => sendControl({ type: "text", text }));
 
     return () => {
       closed = true;
       if (keyboardTargetId === deviceId) keyboardTargetId = null;
+      textInjectors.delete(deviceId);
       stream.removeEventListener("pointerdown", onPointerDown);
       stream.removeEventListener("pointermove", onPointerMove);
       stream.removeEventListener("pointerup", onPointerUp);
@@ -542,7 +637,9 @@ export function DeviceStream({ deviceId, platform, mockupId, recordingActive = f
       stream.removeEventListener("pointerenter", onPointerEnter);
       stream.removeEventListener("pointerleave", onPointerLeave);
       stream.removeEventListener("blur", onBlur);
+      stream.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("paste", onPaste, true);
       stream.classList.remove("is-keyboard-hot");
       socket.close();
       socketRef.current = null;

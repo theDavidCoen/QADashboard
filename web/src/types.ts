@@ -2,6 +2,7 @@ export type Platform = "android" | "ios";
 
 export interface AppInfo {
   name: string | null;
+  version: string | null;
   build: string | null;
   url: string | null;
   kind: "native" | "pwa" | "browser" | null;

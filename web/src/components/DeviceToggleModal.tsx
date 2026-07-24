@@ -1,23 +1,37 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getAirplaneStatus } from "../api/actions";
+import type { ActionResponse } from "../api/actions";
 import { useDialogModal } from "../hooks/useDialogModal";
 import type { DeviceInfo } from "../types";
 
-interface AirplaneModeModalProps {
+type Target = "all" | string;
+
+interface DeviceToggleModalProps {
+  title: string;
+  description?: string;
   devices: DeviceInfo[];
   busy?: boolean;
+  fetchStatus: () => Promise<ActionResponse>;
+  onLabel?: string;
+  offLabel?: string;
+  statusOnLabel?: string;
+  statusOffLabel?: string;
   onConfirm: (enabled: boolean, deviceIds: string[] | undefined) => void;
   onClose: () => void;
 }
 
-type Target = "all" | string;
-
-export function AirplaneModeModal({
+export function DeviceToggleModal({
+  title,
+  description,
   devices,
   busy = false,
+  fetchStatus,
+  onLabel = "Enable",
+  offLabel = "Disable",
+  statusOnLabel = "ON",
+  statusOffLabel = "OFF",
   onConfirm,
   onClose,
-}: AirplaneModeModalProps) {
+}: DeviceToggleModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useDialogModal(dialogRef, onClose);
   const android = useMemo(
@@ -38,7 +52,7 @@ export function AirplaneModeModal({
     (async () => {
       setLoadingStatus(true);
       try {
-        const payload = await getAirplaneStatus();
+        const payload = await fetchStatus();
         if (cancelled) return;
         const next: Record<string, string> = {};
         for (const item of payload.results) {
@@ -54,29 +68,35 @@ export function AirplaneModeModal({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchStatus]);
 
   const deviceIds = target === "all" ? undefined : [target];
   const soleStatus = soleDevice ? statusById[soleDevice.id] : undefined;
-  const soleStatusLabel = loadingStatus
-    ? "Checking status…"
-    : soleStatus === "on"
-      ? "Currently: Airplane ON"
-      : soleStatus === "off"
-        ? "Currently: Airplane OFF"
-        : soleStatus === "error"
-          ? "Status unavailable"
-          : null;
+  const formatStatus = (status: string | undefined) => {
+    if (loadingStatus) return "Checking status…";
+    if (status === "on") return `Currently: ${statusOnLabel}`;
+    if (status === "off") return `Currently: ${statusOffLabel}`;
+    if (status === "error") return "Status unavailable";
+    if (status && status !== "unknown") return status;
+    return null;
+  };
+  const soleStatusLabel = formatStatus(soleStatus);
 
   return (
     <dialog ref={dialogRef} className="device-picker" onClose={onClose}>
       <div className="device-picker__panel">
         <header>
-          <h3>Airplane mode</h3>
+          <h3>{title}</h3>
           <button type="button" className="picker-close" onClick={onClose} aria-label="Close">
             ×
           </button>
         </header>
+
+        {description ? (
+          <p className="picker-empty" style={{ marginBottom: "0.85rem" }}>
+            {description}
+          </p>
+        ) : null}
 
         {android.length === 0 ? (
           <p className="picker-empty">No Android devices connected.</p>
@@ -99,7 +119,7 @@ export function AirplaneModeModal({
                     >
                       <input
                         type="radio"
-                        name="airplane-target"
+                        name={`${title}-target`}
                         checked={target === "all"}
                         onChange={() => setTarget("all")}
                         disabled={busy}
@@ -119,7 +139,7 @@ export function AirplaneModeModal({
                         >
                           <input
                             type="radio"
-                            name="airplane-target"
+                            name={`${title}-target`}
                             checked={target === device.id}
                             onChange={() => setTarget(device.id)}
                             disabled={busy}
@@ -132,9 +152,9 @@ export function AirplaneModeModal({
                             {loadingStatus
                               ? "Checking…"
                               : status === "on"
-                                ? "Airplane ON"
+                                ? statusOnLabel
                                 : status === "off"
-                                  ? "Airplane OFF"
+                                  ? statusOffLabel
                                   : status === "error"
                                     ? "Status unavailable"
                                     : device.model}
@@ -162,7 +182,7 @@ export function AirplaneModeModal({
                 disabled={busy}
                 onClick={() => onConfirm(false, deviceIds)}
               >
-                {busy ? "…" : "Disable"}
+                {busy ? "…" : offLabel}
               </button>
               <button
                 type="button"
@@ -170,7 +190,7 @@ export function AirplaneModeModal({
                 disabled={busy}
                 onClick={() => onConfirm(true, deviceIds)}
               >
-                {busy ? "…" : "Enable"}
+                {busy ? "…" : onLabel}
               </button>
             </div>
           </>

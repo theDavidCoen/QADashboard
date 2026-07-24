@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listLaunchableApps, type LaunchableApp } from "../api/actions";
 import { useDialogModal } from "../hooks/useDialogModal";
 import type { DeviceInfo } from "../types";
@@ -25,13 +25,15 @@ export function StartOtherAppModal({
     () => devices.filter((device) => device.platform === "android"),
     [devices],
   );
-  const [step, setStep] = useState<"device" | "app">("device");
-  const [target, setTarget] = useState<Target>("all");
+  const soleDevice = android.length === 1 ? android[0] : null;
+  const [step, setStep] = useState<"device" | "app">(soleDevice ? "app" : "device");
+  const [target, setTarget] = useState<Target>(soleDevice ? soleDevice.id : "all");
   const [apps, setApps] = useState<LaunchableApp[]>([]);
   const [loadingApps, setLoadingApps] = useState(false);
   const [appsError, setAppsError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
+  const autoLoadRef = useRef(false);
 
   const appsSourceId = target === "all" ? android[0]?.id ?? "" : target;
 
@@ -59,13 +61,24 @@ export function StartOtherAppModal({
       setStep("app");
     } catch (error) {
       setAppsError(error instanceof Error ? error.message : "Failed to load apps");
+      setStep("app");
     } finally {
       setLoadingApps(false);
     }
   };
 
-  const appsHeading =
-    target === "all"
+  useEffect(() => {
+    if (!soleDevice || autoLoadRef.current) return;
+    autoLoadRef.current = true;
+    setTarget(soleDevice.id);
+    void loadApps();
+    // Intentionally once on open when a sole device is present.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [soleDevice?.id]);
+
+  const appsHeading = soleDevice
+    ? `Apps on ${soleDevice.name}`
+    : target === "all"
       ? `Apps (from ${android[0]?.name ?? "device"} · start on all)`
       : `Apps on ${android.find((d) => d.id === target)?.name ?? "device"}`;
 
@@ -146,53 +159,70 @@ export function StartOtherAppModal({
             <p className="modal-field__label" style={{ marginBottom: "0.45rem" }}>
               {appsHeading}
             </p>
-            <input
-              className="modal-input"
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search apps…"
-              disabled={busy}
-              style={{ marginBottom: "0.75rem" }}
-            />
-            {appsError ? <p className="picker-empty">{appsError}</p> : null}
-            <ul className="picker-list airplane-targets app-pick-list">
-              {filtered.map((app) => (
-                <li key={app.package}>
-                  <label
-                    className={`picker-item airplane-target ${selectedPackage === app.package ? "is-selected" : ""}`}
-                  >
-                    <input
-                      type="radio"
-                      name="start-app-package"
-                      checked={selectedPackage === app.package}
-                      onChange={() => setSelectedPackage(app.package)}
-                      disabled={busy}
-                    />
-                    <span className="picker-item__row">
-                      <span className="picker-item__name">{app.label}</span>
-                    </span>
-                    <span className="picker-item__detail">{app.package}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            {!filtered.length && !appsError ? (
-              <p className="picker-empty">No apps match the search.</p>
-            ) : null}
+            {loadingApps ? (
+              <p className="picker-empty">Loading apps…</p>
+            ) : (
+              <>
+                <input
+                  className="modal-input"
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search apps…"
+                  disabled={busy}
+                  style={{ marginBottom: "0.75rem" }}
+                />
+                {appsError ? <p className="picker-empty">{appsError}</p> : null}
+                <ul className="picker-list airplane-targets app-pick-list">
+                  {filtered.map((app) => (
+                    <li key={app.package}>
+                      <label
+                        className={`picker-item airplane-target ${selectedPackage === app.package ? "is-selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="start-app-package"
+                          checked={selectedPackage === app.package}
+                          onChange={() => setSelectedPackage(app.package)}
+                          disabled={busy}
+                        />
+                        <span className="picker-item__row">
+                          <span className="picker-item__name">{app.label}</span>
+                        </span>
+                        <span className="picker-item__detail">{app.package}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                {!filtered.length && !appsError ? (
+                  <p className="picker-empty">No apps match the search.</p>
+                ) : null}
+              </>
+            )}
             <div className="modal-actions">
-              <button
-                type="button"
-                className="modal-btn modal-btn--ghost"
-                onClick={() => setStep("device")}
-                disabled={busy}
-              >
-                Back
-              </button>
+              {soleDevice ? (
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--ghost"
+                  onClick={onClose}
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="modal-btn modal-btn--ghost"
+                  onClick={() => setStep("device")}
+                  disabled={busy || loadingApps}
+                >
+                  Back
+                </button>
+              )}
               <button
                 type="button"
                 className="modal-btn modal-btn--primary"
-                disabled={busy || !selected}
+                disabled={busy || loadingApps || !selected}
                 onClick={() => selected && onConfirm(confirmIds, selected)}
               >
                 {busy ? "Starting…" : "Start app"}

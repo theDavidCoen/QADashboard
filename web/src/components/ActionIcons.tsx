@@ -122,6 +122,46 @@ export function IconAirplane({ className }: IconProps) {
   );
 }
 
+export function IconWifi({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M5 12.5c2.2-2.1 4.6-3.2 7-3.2s4.8 1.1 7 3.2" />
+      <path d="M8.2 15.6c1.3-1.2 2.6-1.8 3.8-1.8s2.5.6 3.8 1.8" />
+      <circle cx="12" cy="19" r="1.15" fill="currentColor" stroke="none" />
+      <path d="M2 9c3.2-3 6.5-4.5 10-4.5S18.8 6 22 9" opacity="0.55" />
+    </Svg>
+  );
+}
+
+export function IconVpn({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 3 4.5 6.5v5.2c0 4.4 3.1 8.4 7.5 9.3 4.4-.9 7.5-4.9 7.5-9.3V6.5L12 3Z" />
+      <path d="M9.5 12.2 11.2 14l3.5-4" />
+    </Svg>
+  );
+}
+
+export function IconBattery({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="3" y="7.5" width="15.5" height="9" rx="1.8" />
+      <path d="M18.5 10.5h1.8a.8.8 0 0 1 .8.8v1.4a.8.8 0 0 1-.8.8H18.5" />
+      <path d="M7 12h6" />
+    </Svg>
+  );
+}
+
+export function IconRotate({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M16.5 4.5A8 8 0 1 1 5.2 9.5" />
+      <polyline points="16.5 4.5 16.5 9 12 9" />
+      <rect x="8.5" y="11" width="5.5" height="8" rx="1.1" transform="rotate(-20 11.25 15)" />
+    </Svg>
+  );
+}
+
 export function IconUnplug({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -177,6 +217,10 @@ export type ActionIconName =
   | "video"
   | "refresh"
   | "airplane"
+  | "wifi"
+  | "vpn"
+  | "battery"
+  | "rotate"
   | "unplug"
   | "user"
   | "settings"
@@ -194,6 +238,10 @@ const ICONS: Record<ActionIconName, (props: IconProps) => ReactElement> = {
   video: IconVideo,
   refresh: IconRefresh,
   airplane: IconAirplane,
+  wifi: IconWifi,
+  vpn: IconVpn,
+  battery: IconBattery,
+  rotate: IconRotate,
   unplug: IconUnplug,
   user: IconUser,
   settings: IconSettings,

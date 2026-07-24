@@ -169,6 +169,69 @@ export async function getAirplaneStatus(deviceId?: string): Promise<ActionRespon
   return payload;
 }
 
+export function setWifi(enabled: boolean, deviceIds?: string[]) {
+  return postAction("/api/actions/wifi", {
+    enabled,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
+export async function getWifiStatus(deviceId?: string): Promise<ActionResponse> {
+  const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+  const response = await fetch(`/api/actions/wifi${query}`);
+  const payload = (await response.json().catch(() => ({}))) as ActionResponse & {
+    detail?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.detail || `Request failed (${response.status})`);
+  }
+  return payload;
+}
+
+export function setVpn(enabled: boolean, deviceIds?: string[]) {
+  return postAction("/api/actions/vpn", {
+    enabled,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
+export async function getVpnStatus(deviceId?: string): Promise<ActionResponse> {
+  const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+  const response = await fetch(`/api/actions/vpn${query}`);
+  const payload = (await response.json().catch(() => ({}))) as ActionResponse & {
+    detail?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.detail || `Request failed (${response.status})`);
+  }
+  return payload;
+}
+
+export function setBatterySaver(enabled: boolean, deviceIds?: string[]) {
+  return postAction("/api/actions/battery-saver", {
+    enabled,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
+export async function getBatterySaverStatus(deviceId?: string): Promise<ActionResponse> {
+  const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+  const response = await fetch(`/api/actions/battery-saver${query}`);
+  const payload = (await response.json().catch(() => ({}))) as ActionResponse & {
+    detail?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.detail || `Request failed (${response.status})`);
+  }
+  return payload;
+}
+
+export function rotateDevices(deviceIds?: string[]) {
+  return postAction("/api/actions/rotate", {
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
 export interface EdgeAccount {
   username: string;
   onDevice: boolean;

@@ -16,6 +16,8 @@ from pydantic import BaseModel, Field
 from .actions import (
     airplane_mode_async,
     airplane_status_async,
+    battery_saver_async,
+    battery_saver_status_async,
     custom_adb_async,
     force_stop_async,
     kill_background_async,
@@ -25,11 +27,16 @@ from .actions import (
     normalize_http_url,
     open_url_async,
     reboot_async,
+    rotate_async,
     screenshot_async,
     screenrecord_start_async,
     screenrecord_stop_async,
     start_app_async,
     start_package_async,
+    vpn_async,
+    vpn_status_async,
+    wifi_async,
+    wifi_status_async,
 )
 from .config import load_config
 from .credentials_vault import change_master_password, set_vault_path, unlock_vault, vault_info
@@ -103,6 +110,7 @@ class SettingsPatchBody(BaseModel):
     arkade_features_enabled: bool | None = Field(default=None, alias="arkadeFeaturesEnabled")
     sound_effects_enabled: bool | None = Field(default=None, alias="soundEffectsEnabled")
     sidebar_actions: dict[str, bool] | None = Field(default=None, alias="sidebarActions")
+    sidebar_group_order: list[str] | None = Field(default=None, alias="sidebarGroupOrder")
     custom_adb_actions: list[dict] | None = Field(default=None, alias="customAdbActions")
     master_password: str | None = Field(default=None, alias="masterPassword")
 
@@ -174,6 +182,59 @@ async def action_airplane_mode(body: AirplaneBody) -> dict:
 async def action_airplane_status(device_id: str | None = None) -> dict:
     ids = [device_id] if device_id else None
     results = await airplane_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/wifi")
+async def action_wifi(body: AirplaneBody) -> dict:
+    results = await wifi_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/wifi")
+async def action_wifi_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await wifi_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/vpn")
+async def action_vpn(body: AirplaneBody) -> dict:
+    results = await vpn_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/vpn")
+async def action_vpn_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await vpn_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/battery-saver")
+async def action_battery_saver(body: AirplaneBody) -> dict:
+    results = await battery_saver_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/battery-saver")
+async def action_battery_saver_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await battery_saver_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/rotate")
+async def action_rotate(body: DeviceIdsBody) -> dict:
+    results = await rotate_async(body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
     return {"results": [item.to_dict() for item in results]}
 
 
@@ -340,6 +401,7 @@ def _settings_response(data: dict | None = None) -> dict:
         "arkadeFeaturesEnabled": bool(settings.get("arkadeFeaturesEnabled", True)),
         "soundEffectsEnabled": bool(settings.get("soundEffectsEnabled", True)),
         "sidebarActions": settings["sidebarActions"],
+        "sidebarGroupOrder": settings["sidebarGroupOrder"],
         "sidebarActionDefs": SIDEBAR_ACTION_DEFS,
         "customAdbActions": settings["customAdbActions"],
         "vault": vault_info(),
@@ -365,6 +427,8 @@ async def put_settings(body: SettingsPatchBody) -> dict:
         patch["soundEffectsEnabled"] = body.sound_effects_enabled
     if body.sidebar_actions is not None:
         patch["sidebarActions"] = body.sidebar_actions
+    if body.sidebar_group_order is not None:
+        patch["sidebarGroupOrder"] = body.sidebar_group_order
     if body.custom_adb_actions is not None:
         patch["customAdbActions"] = body.custom_adb_actions
     if body.vault_path is not None:
@@ -410,12 +474,13 @@ async def action_custom_adb(body: CustomAdbRunBody) -> dict:
 async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
     await stream.start()
     await websocket.send_bytes(await stream.config_message())
+    loop = asyncio.get_running_loop()
 
     async def pump_video() -> None:
         async for packet in stream.stream_packets():
             await websocket.send_bytes(packet)
 
-    async def pump_control() -> None:
+    async def pump_control_in() -> None:
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
@@ -429,13 +494,24 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                 continue
             payload = from_client_message(data)
             if payload:
-                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, stream.send_control, payload)
 
+    async def pump_device_out() -> None:
+        while True:
+            msg = await loop.run_in_executor(None, stream.recv_device_message)
+            if msg is None:
+                break
+            if msg.get("type") in {"clipboard", "clipboard_ack"}:
+                try:
+                    await websocket.send_json(msg)
+                except Exception:
+                    break
+
     video_task = asyncio.create_task(pump_video())
-    control_task = asyncio.create_task(pump_control())
+    control_in_task = asyncio.create_task(pump_control_in())
+    device_out_task = asyncio.create_task(pump_device_out())
     done, pending = await asyncio.wait(
-        {video_task, control_task},
+        {video_task, control_in_task, device_out_task},
         return_when=asyncio.FIRST_COMPLETED,
     )
     for task in pending:

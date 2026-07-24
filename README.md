@@ -14,7 +14,7 @@ Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/G
 
 ```bash
 # Arch / CachyOS — ideviceinstaller is not in the official repos
-sudo pacman -S android-tools scrcpy libimobiledevice
+sudo pacman -S android-tools scrcpy libimobiledevice python-gobject webkit2gtk-4.1
 
 # Optional (iOS app version label only): AUR
 # yay -S ideviceinstaller
@@ -32,13 +32,29 @@ Open **http://127.0.0.1:9470/**
 
 The script creates a Python venv, installs dependencies, builds the web UI if needed, and starts the server.
 
+### Desktop app (app menu)
+
+For daily use without a browser tab, install a user launcher (GNOME/KDE):
+
+```bash
+cd "~/Documenti/QA Dashboard"
+chmod +x install-desktop.sh start-app.sh
+./install-desktop.sh
+```
+
+Then open **QA Dashboard** from the app menu (or `./start-app.sh`). That starts the API if needed and opens a native window via [pywebview](https://pywebview.flowrl.com/) (WebKitGTK on Linux).
+
+**System packages (Arch/CachyOS):** `python-gobject` and `webkit2gtk-4.1` (for the GTK webview). The project venv is created with `--system-site-packages` so `gi` is visible.
+
+Development and new features: keep using `./start.sh` + browser (or Vite on `:5173`). The desktop window is only the everyday shell.
+
 ## Development
 
 Terminal 1 — backend:
 
 ```bash
 cd "~/Documenti/QA Dashboard"
-python3 -m venv .venv
+python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m server.main
 ```

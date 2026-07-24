@@ -28,6 +28,7 @@ export interface SettingsPayload {
   arkadeFeaturesEnabled: boolean;
   soundEffectsEnabled: boolean;
   sidebarActions: Record<string, boolean>;
+  sidebarGroupOrder: string[];
   sidebarActionDefs: SidebarActionDef[];
   customAdbActions: CustomAdbAction[];
   vault: VaultInfo;
@@ -63,6 +64,7 @@ export async function saveSettings(patch: {
   arkadeFeaturesEnabled?: boolean;
   soundEffectsEnabled?: boolean;
   sidebarActions?: Record<string, boolean>;
+  sidebarGroupOrder?: string[];
   customAdbActions?: CustomAdbAction[];
   masterPassword?: string;
 }): Promise<SettingsPayload> {

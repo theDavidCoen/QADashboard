@@ -5,6 +5,22 @@ All notable changes to QA Dashboard are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Desktop app shell** — `start-app.sh` + `pywebview` window; `install-desktop.sh` installs a user app-menu launcher (`.desktop` + icon). Dev workflow stays `./start.sh` + browser. Requires system `python-gobject` / `webkit2gtk-4.1` and a venv with `--system-site-packages`.
+
+### Changed
+
+- With a **single Android device** in the workspace, target-picker modals are skipped (screenshot, kill, reboot, Rec/video start immediately; Airplane keeps Enable/Disable only; Start other app goes straight to the app list).
+
+### Added
+
+- **Keyboard shortcuts** — hold Space 1s → Screenshot; Shift+Space → start/stop video Rec; legend at the bottom of Settings.
+- **Device actions** — Wi‑Fi, VPN, Battery saver toggles; Rotate device (90° dashboard + device orientation, rotation lock off).
+- **Sidebar group order** — reorder Launch / Stop / Capture / Device / Custom ADB in Settings (↑↓).
+
 ## [0.2.0] — 2026-07-24
 
 ### Added

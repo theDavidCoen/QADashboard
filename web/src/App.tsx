@@ -4,7 +4,14 @@ import {
   killForeground,
   openUrl,
   rebootDevices,
+  rotateDevices,
   setAirplaneMode,
+  setBatterySaver,
+  setVpn,
+  setWifi,
+  getBatterySaverStatus,
+  getVpnStatus,
+  getWifiStatus,
   startApp,
   startEdgeAccount,
   startPackage,
@@ -27,6 +34,7 @@ import { ArkadeStartModal } from "./components/ArkadeStartModal";
 import { DevicePicker } from "./components/DevicePicker";
 import { DeviceSlot } from "./components/DeviceSlot";
 import { DeviceTargetModal } from "./components/DeviceTargetModal";
+import { DeviceToggleModal } from "./components/DeviceToggleModal";
 import { DevicesReadyModal } from "./components/DevicesReadyModal";
 import { EdgeAccountModal } from "./components/EdgeAccountModal";
 import { EmptyAddSlot } from "./components/EmptyAddSlot";
@@ -35,6 +43,10 @@ import { SettingsModal } from "./components/SettingsModal";
 import { StartOtherAppModal } from "./components/StartOtherAppModal";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { VideoRecordModal } from "./components/VideoRecordModal";
+import {
+  getKeyboardTargetId,
+  injectTextToKeyboardTarget,
+} from "./components/DeviceStream";
 import { playFocusModeSound, playRecSound, playShutterSound, setSoundEffectsEnabled } from "./feedback";
 import type { DeviceInfo, SlotDevice } from "./types";
 import { APP_LICENSE_URL, APP_REPO_URL, APP_VERSION } from "./version";
@@ -57,6 +69,10 @@ type ModalKind =
   | "kill-bg"
   | "kill-fg"
   | "airplane"
+  | "wifi"
+  | "vpn"
+  | "battery-saver"
+  | "rotate"
   | "reboot"
   | "screenshot"
   | "video"
@@ -74,15 +90,25 @@ export default function App() {
   const [recordingDeviceId, setRecordingDeviceId] = useState<string | null>(null);
   const [focusDeviceId, setFocusDeviceId] = useState<string | null>(null);
   const [focusLocked, setFocusLocked] = useState(false);
+  const [focusExpanded, setFocusExpanded] = useState(false);
   const [flashDeviceIds, setFlashDeviceIds] = useState<string[]>([]);
   const [rebootingIds, setRebootingIds] = useState<string[]>([]);
+  /** Dashboard visual rotation (degrees) per device — 90° steps. */
+  const [slotRotationDeg, setSlotRotationDeg] = useState<Record<string, number>>({});
   const rebootingIdsRef = useRef<string[]>([]);
   const rebootingSeenOffline = useRef<Set<string>>(new Set());
   const recordingDeviceIdRef = useRef<string | null>(null);
   const focusDeviceIdRef = useRef<string | null>(null);
+  const focusExpandedRef = useRef(false);
   const actionBusyRef = useRef(false);
   const modalRef = useRef<ModalKind>(null);
   const runVideoStopRef = useRef<(deviceId: string) => Promise<void>>(async () => {});
+  const runVideoStartRef = useRef<(deviceId: string) => Promise<void>>(async () => {});
+  const runScreenshotRef = useRef<(deviceIds: string[] | undefined) => Promise<void>>(async () => {});
+  const setModalRef = useRef(setModal);
+  const addedAndroidIdsRef = useRef<string[]>([]);
+  const soleAndroidIdRef = useRef<string | null>(null);
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const [sidebarFlags, setSidebarFlags] = useState<Record<string, boolean>>({});
   const [edgeFeaturesEnabled, setEdgeFeaturesEnabled] = useState(false);
   const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(false);
@@ -90,6 +116,13 @@ export default function App() {
   const [featuresReady, setFeaturesReady] = useState(false);
   const [customAdbActions, setCustomAdbActions] = useState<CustomAdbAction[]>([]);
   const [capturePathHint, setCapturePathHint] = useState("~/Immagini/Schermate");
+  const [sidebarGroupOrder, setSidebarGroupOrder] = useState<string[]>([
+    "Launch",
+    "Stop",
+    "Capture",
+    "Device",
+    "Custom ADB",
+  ]);
 
   const EDGE_ACTION_IDS = useMemo(
     () => new Set(["start_edge", "start_edge_account", "start_edge_develop"]),
@@ -114,6 +147,9 @@ export default function App() {
     setSoundEffectsEnabledState(soundOn);
     setSoundEffectsEnabled(soundOn);
     setCustomAdbActions(payload.customAdbActions ?? []);
+    if (payload.sidebarGroupOrder?.length) {
+      setSidebarGroupOrder(payload.sidebarGroupOrder);
+    }
     if (payload.capturePath) setCapturePathHint(payload.capturePath);
     setFeaturesReady(true);
   };
@@ -169,6 +205,9 @@ export default function App() {
 
   const addedAndroidIds = useMemo(() => addedAndroid.map((device) => device.id), [addedAndroid]);
 
+  /** When only one Android is in the workspace, skip device-target pickers. */
+  const soleAndroidId = addedAndroid.length === 1 ? addedAndroid[0].id : null;
+
   const actionsEnabled = addedAndroid.length > 0;
 
   const resolveActionTargets = (deviceIds: string[] | undefined): string[] | undefined => {
@@ -219,7 +258,7 @@ export default function App() {
             model: live.model,
             appLabel: isRebooting ? "Rebooting…" : (live.appLabel ?? slot.appLabel),
             app: isRebooting
-              ? { name: null, build: null, url: null, kind: null, package: null }
+              ? { name: null, version: null, build: null, url: null, kind: null, package: null }
               : live.app?.name
                 ? live.app
                 : slot.app?.name
@@ -276,6 +315,15 @@ export default function App() {
       if (removed && focusDeviceId === removed.id) {
         setFocusDeviceId(null);
         setFocusLocked(false);
+        setFocusExpanded(false);
+      }
+      if (removed) {
+        setSlotRotationDeg((prev) => {
+          if (!(removed.id in prev)) return prev;
+          const next = { ...prev };
+          delete next[removed.id];
+          return next;
+        });
       }
       const next = [...current];
       next.splice(index, 1);
@@ -287,12 +335,58 @@ export default function App() {
     setSlots([null]);
     setPickerIndex(null);
     setModal(null);
+    setSlotRotationDeg({});
     setRecordingDeviceId(null);
     setFocusDeviceId(null);
     setFocusLocked(false);
+    setFocusExpanded(false);
   };
 
+  const exitFocusExpanded = useCallback(() => {
+    setFocusExpanded(false);
+    focusExpandedRef.current = false;
+    const active = document.fullscreenElement;
+    if (active && typeof document.exitFullscreen === "function") {
+      void document.exitFullscreen().catch(() => {
+        /* ignore */
+      });
+    }
+  }, []);
+
+  const enterFocusExpanded = useCallback(() => {
+    setFocusExpanded(true);
+    focusExpandedRef.current = true;
+    const node = workspaceRef.current;
+    const req =
+      node &&
+      (node.requestFullscreen?.bind(node) ||
+        (
+          node as HTMLElement & {
+            webkitRequestFullscreen?: () => Promise<void> | void;
+          }
+        ).webkitRequestFullscreen?.bind(node));
+    if (req && !document.fullscreenElement) {
+      try {
+        const result = req();
+        if (result && typeof (result as Promise<void>).catch === "function") {
+          void (result as Promise<void>).catch(() => {
+            /* CSS immersive mode still applies */
+          });
+        }
+      } catch {
+        /* CSS immersive mode still applies */
+      }
+    }
+  }, []);
+
   const exitFocusMode = useCallback(() => {
+    setFocusExpanded(false);
+    focusExpandedRef.current = false;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {
+        /* ignore */
+      });
+    }
     setFocusDeviceId((current) => {
       if (!current) return current;
       playFocusModeSound(false);
@@ -306,6 +400,7 @@ export default function App() {
     if (!first) return;
     setFocusDeviceId(first.id);
     setFocusLocked(false);
+    setFocusExpanded(false);
     playFocusModeSound(true);
   };
 
@@ -320,10 +415,28 @@ export default function App() {
     setFocusLocked(true);
   };
 
+  const onFocusExpandDevice = (deviceId: string) => {
+    if (!focusDeviceId || !focusLocked || focusExpanded) return;
+    if (focusDeviceId !== deviceId) return;
+    enterFocusExpanded();
+  };
+
   recordingDeviceIdRef.current = recordingDeviceId;
   focusDeviceIdRef.current = focusDeviceId;
+  focusExpandedRef.current = focusExpanded;
   actionBusyRef.current = actionBusy;
   modalRef.current = modal;
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && focusExpandedRef.current) {
+        setFocusExpanded(false);
+        focusExpandedRef.current = false;
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   const canReorder = connectedCount > 1;
 
@@ -500,6 +613,76 @@ export default function App() {
     }
   };
 
+  const runWifi = async (enabled: boolean, deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    setActionBusy(true);
+    try {
+      const targets = resolveActionTargets(deviceIds);
+      const payload = await setWifi(enabled, targets);
+      showResults(enabled ? "Wi‑Fi ON" : "Wi‑Fi OFF", payload.results);
+    } catch (error) {
+      setActionNote(`Wi‑Fi: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const runVpn = async (enabled: boolean, deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    setActionBusy(true);
+    try {
+      const targets = resolveActionTargets(deviceIds);
+      const payload = await setVpn(enabled, targets);
+      showResults(enabled ? "VPN ON" : "VPN OFF", payload.results);
+    } catch (error) {
+      setActionNote(`VPN: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const runBatterySaver = async (enabled: boolean, deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    setActionBusy(true);
+    try {
+      const targets = resolveActionTargets(deviceIds);
+      const payload = await setBatterySaver(enabled, targets);
+      showResults(enabled ? "Battery saver ON" : "Battery saver OFF", payload.results);
+    } catch (error) {
+      setActionNote(`Battery saver: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const runRotate = async (deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    setActionBusy(true);
+    try {
+      const targets = resolveActionTargets(deviceIds) ?? [];
+      // Visual 90° rotate of device + screen in the dashboard.
+      if (targets.length) {
+        setSlotRotationDeg((prev) => {
+          const next = { ...prev };
+          for (const id of targets) {
+            next[id] = ((next[id] ?? 0) + 90) % 360;
+          }
+          return next;
+        });
+      }
+      const payload = await rotateDevices(targets);
+      showResults("Rotate", payload.results);
+    } catch (error) {
+      setActionNote(`Rotate: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const runReboot = async (deviceIds: string[] | undefined) => {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
@@ -571,19 +754,114 @@ export default function App() {
       setActionBusy(false);
     }
   };
+
+  const openOrRunTargeted = (
+    kind: Extract<ModalKind, "kill-bg" | "kill-fg" | "reboot" | "screenshot" | "rotate">,
+    run: (deviceIds: string[] | undefined) => void | Promise<void>,
+  ) => {
+    if (soleAndroidId) {
+      void run([soleAndroidId]);
+      return;
+    }
+    setModal(kind);
+  };
+
+  const openOrStartVideo = () => {
+    if (soleAndroidId) {
+      void runVideoStart(soleAndroidId);
+      return;
+    }
+    setModal("video");
+  };
+
   runVideoStopRef.current = runVideoStop;
+  runVideoStartRef.current = runVideoStart;
+  runScreenshotRef.current = runScreenshot;
+  setModalRef.current = setModal;
+  addedAndroidIdsRef.current = addedAndroidIds;
+  soleAndroidIdRef.current = soleAndroidId;
 
   useEffect(() => {
+    let spaceHoldTimer: number | null = null;
+    let spaceHoldFired = false;
+    let spaceUsedAsShortcut = false;
+
+    const clearSpaceHold = () => {
+      if (spaceHoldTimer !== null) {
+        window.clearTimeout(spaceHoldTimer);
+        spaceHoldTimer = null;
+      }
+    };
+
+    const isTypingTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    };
+
+    const runVideoShortcut = () => {
+      if (actionBusyRef.current) return;
+      const recordingId = recordingDeviceIdRef.current;
+      if (recordingId) {
+        void runVideoStopRef.current(recordingId);
+        return;
+      }
+      const ids = addedAndroidIdsRef.current;
+      if (!ids.length) return;
+      const preferred = soleAndroidIdRef.current ?? getKeyboardTargetId();
+      if (preferred && ids.includes(preferred)) {
+        void runVideoStartRef.current(preferred);
+        return;
+      }
+      if (ids.length === 1) {
+        void runVideoStartRef.current(ids[0]);
+        return;
+      }
+      setModalRef.current("video");
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
       if (modalRef.current) return;
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) {
+      if (isTypingTarget(event.target)) return;
+
+      if (event.code === "Space") {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+        if (event.shiftKey) {
+          if (event.repeat) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          spaceUsedAsShortcut = true;
+          clearSpaceHold();
+          runVideoShortcut();
           return;
         }
+
+        // Hold Space 1s → Screenshot (short press still types Space on armed device).
+        if (event.repeat) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        spaceHoldFired = false;
+        spaceUsedAsShortcut = false;
+        clearSpaceHold();
+        spaceHoldTimer = window.setTimeout(() => {
+          spaceHoldTimer = null;
+          spaceHoldFired = true;
+          spaceUsedAsShortcut = true;
+          if (!actionBusyRef.current && addedAndroidIdsRef.current.length) {
+            const sole = soleAndroidIdRef.current;
+            void runScreenshotRef.current(sole ? [sole] : undefined);
+          }
+        }, 1000);
+        return;
       }
+
+      if (event.key !== "Escape") return;
 
       const recordingId = recordingDeviceIdRef.current;
       if (recordingId) {
@@ -592,6 +870,14 @@ export default function App() {
         if (!actionBusyRef.current) {
           void runVideoStopRef.current(recordingId);
         }
+        return;
+      }
+
+      // Focus fullscreen: Esc always leaves expanded view (even over the stream).
+      if (focusExpandedRef.current) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        exitFocusExpanded();
         return;
       }
 
@@ -604,9 +890,30 @@ export default function App() {
       }
     };
 
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space") return;
+      if (modalRef.current || isTypingTarget(event.target)) {
+        clearSpaceHold();
+        spaceUsedAsShortcut = false;
+        return;
+      }
+      const skipInject = spaceUsedAsShortcut || spaceHoldFired;
+      clearSpaceHold();
+      spaceHoldFired = false;
+      spaceUsedAsShortcut = false;
+      if (!skipInject) {
+        injectTextToKeyboardTarget(" ");
+      }
+    };
+
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [exitFocusMode]);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      clearSpaceHold();
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [exitFocusMode, exitFocusExpanded]);
 
   const runCustomAction = async (action: CustomAdbAction) => {
     if (actionBusy || !actionsEnabled) return;
@@ -648,183 +955,245 @@ export default function App() {
         </div>
 
         <nav className="sidebar-actions" aria-label="Device actions">
-          <div className="sidebar-actions__group">
-            <p className="sidebar-actions__label">Launch</p>
-            {actionVisible("start_edge") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => runStart("edge", "Start Edge")}
-              >
-                <ActionIcon name="play" />
-                <span>Start Edge</span>
-              </button>
-            ) : null}
-            {actionVisible("start_edge_account") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("edge-account")}
-              >
-                <ActionIcon name="user" />
-                <span>Start Edge account</span>
-              </button>
-            ) : null}
-            {actionVisible("start_edge_develop") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => runStart("edge_develop", "Start Edge Develop")}
-              >
-                <ActionIcon name="code" />
-                <span>Start Edge Develop</span>
-              </button>
-            ) : null}
-            {actionVisible("start_arkade") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("arkade")}
-              >
-                <ActionIcon name="wallet" />
-                <span>Start Arkade</span>
-              </button>
-            ) : null}
-            {actionVisible("start_other_pwa") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("pwa")}
-              >
-                <ActionIcon name="globe" />
-                <span>Start other PWA</span>
-              </button>
-            ) : null}
-            {actionVisible("start_other_app") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("other-app")}
-              >
-                <ActionIcon name="apps" />
-                <span>Start other app</span>
-              </button>
-            ) : null}
-          </div>
-
-          <div className="sidebar-actions__group">
-            <p className="sidebar-actions__label">Stop</p>
-            {actionVisible("kill_background") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("kill-bg")}
-              >
-                <ActionIcon name="layers" />
-                <span>Kill background apps</span>
-              </button>
-            ) : null}
-            {actionVisible("kill_app") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("kill-fg")}
-              >
-                <ActionIcon name="stop" />
-                <span>Kill app</span>
-              </button>
-            ) : null}
-          </div>
-
-          <div className="sidebar-actions__group">
-            <p className="sidebar-actions__label">Capture</p>
-            {actionVisible("screenshot") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("screenshot")}
-              >
-                <ActionIcon name="camera" />
-                <span>Screenshot</span>
-              </button>
-            ) : null}
-            {actionVisible("video") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("video")}
-              >
-                <ActionIcon name="video" />
-                <span>Video recording</span>
-              </button>
-            ) : null}
-          </div>
-
-          <div className="sidebar-actions__group">
-            <p className="sidebar-actions__label">Device</p>
-            {actionVisible("reboot") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("reboot")}
-              >
-                <ActionIcon name="refresh" />
-                <span>Reboot device</span>
-              </button>
-            ) : null}
-            {actionVisible("airplane") ? (
-              <button
-                type="button"
-                className="sidebar-action"
-                disabled={actionBusy || !actionsEnabled}
-                onClick={() => setModal("airplane")}
-              >
-                <ActionIcon name="airplane" />
-                <span>Airplane Mode</span>
-              </button>
-            ) : null}
-            {actionVisible("disconnect_all") ? (
-              <button
-                type="button"
-                className="sidebar-action sidebar-action--danger"
-                disabled={connectedCount === 0}
-                onClick={disconnectAll}
-              >
-                <ActionIcon name="unplug" />
-                <span>Disconnect all devices</span>
-              </button>
-            ) : null}
-          </div>
-
-          {customAdbActions.length > 0 ? (
-            <div className="sidebar-actions__group">
-              <p className="sidebar-actions__label">Custom ADB</p>
-              {customAdbActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="sidebar-action"
-                  disabled={actionBusy || !actionsEnabled}
-                  title={action.args}
-                  onClick={() => void runCustomAction(action)}
-                >
-                  <ActionIcon name="code" />
-                  <span>{action.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          {sidebarGroupOrder.map((group) => {
+            if (group === "Launch") {
+              return (
+                <div key={group} className="sidebar-actions__group">
+                  <p className="sidebar-actions__label">Launch</p>
+                  {actionVisible("start_edge") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => runStart("edge", "Start Edge")}
+                    >
+                      <ActionIcon name="play" />
+                      <span>Start Edge</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("start_edge_account") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("edge-account")}
+                    >
+                      <ActionIcon name="user" />
+                      <span>Start Edge account</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("start_edge_develop") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => runStart("edge_develop", "Start Edge Develop")}
+                    >
+                      <ActionIcon name="code" />
+                      <span>Start Edge Develop</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("start_arkade") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("arkade")}
+                    >
+                      <ActionIcon name="wallet" />
+                      <span>Start Arkade</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("start_other_pwa") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("pwa")}
+                    >
+                      <ActionIcon name="globe" />
+                      <span>Start other PWA</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("start_other_app") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("other-app")}
+                    >
+                      <ActionIcon name="apps" />
+                      <span>Start other app</span>
+                    </button>
+                  ) : null}
+                </div>
+              );
+            }
+            if (group === "Stop") {
+              return (
+                <div key={group} className="sidebar-actions__group">
+                  <p className="sidebar-actions__label">Stop</p>
+                  {actionVisible("kill_background") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => openOrRunTargeted("kill-bg", runKillBackground)}
+                    >
+                      <ActionIcon name="layers" />
+                      <span>Kill background apps</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("kill_app") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => openOrRunTargeted("kill-fg", runKillForeground)}
+                    >
+                      <ActionIcon name="stop" />
+                      <span>Kill app</span>
+                    </button>
+                  ) : null}
+                </div>
+              );
+            }
+            if (group === "Capture") {
+              return (
+                <div key={group} className="sidebar-actions__group">
+                  <p className="sidebar-actions__label">Capture</p>
+                  {actionVisible("screenshot") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => openOrRunTargeted("screenshot", runScreenshot)}
+                    >
+                      <ActionIcon name="camera" />
+                      <span>Screenshot</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("video") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={openOrStartVideo}
+                    >
+                      <ActionIcon name="video" />
+                      <span>Video recording</span>
+                    </button>
+                  ) : null}
+                </div>
+              );
+            }
+            if (group === "Device") {
+              return (
+                <div key={group} className="sidebar-actions__group">
+                  <p className="sidebar-actions__label">Device</p>
+                  {actionVisible("reboot") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => openOrRunTargeted("reboot", runReboot)}
+                    >
+                      <ActionIcon name="refresh" />
+                      <span>Reboot device</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("airplane") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("airplane")}
+                    >
+                      <ActionIcon name="airplane" />
+                      <span>Airplane Mode</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("wifi") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("wifi")}
+                    >
+                      <ActionIcon name="wifi" />
+                      <span>Wi‑Fi</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("vpn") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("vpn")}
+                    >
+                      <ActionIcon name="vpn" />
+                      <span>VPN</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("battery_saver") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("battery-saver")}
+                    >
+                      <ActionIcon name="battery" />
+                      <span>Battery saver</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("rotate") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => openOrRunTargeted("rotate", runRotate)}
+                    >
+                      <ActionIcon name="rotate" />
+                      <span>Rotate device</span>
+                    </button>
+                  ) : null}
+                  {actionVisible("disconnect_all") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action sidebar-action--danger"
+                      disabled={connectedCount === 0}
+                      onClick={disconnectAll}
+                    >
+                      <ActionIcon name="unplug" />
+                      <span>Disconnect all devices</span>
+                    </button>
+                  ) : null}
+                </div>
+              );
+            }
+            if (group === "Custom ADB") {
+              if (customAdbActions.length === 0) return null;
+              return (
+                <div key={group} className="sidebar-actions__group">
+                  <p className="sidebar-actions__label">Custom ADB</p>
+                  {customAdbActions.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      title={action.args}
+                      onClick={() => void runCustomAction(action)}
+                    >
+                      <ActionIcon name="code" />
+                      <span>{action.label}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            }
+            return null;
+          })}
 
           {actionNote ? <p className="sidebar-action-note">{actionNote}</p> : null}
         </nav>
@@ -878,14 +1247,25 @@ export default function App() {
       </aside>
 
       <section
+        ref={workspaceRef}
         className={[
           "workspace",
           focusDeviceId ? "workspace--focus-mode" : "",
           focusDeviceId && focusLocked ? "workspace--focus-locked" : "",
+          focusExpanded ? "workspace--focus-expanded" : "",
         ]
           .filter(Boolean)
           .join(" ")}
         aria-label="Device workspace"
+        onPointerDown={(event) => {
+          if (!focusExpanded) return;
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest(".device-slot--focused")) return;
+          if (target.closest(".workspace-top-controls")) return;
+          if (target.closest(".workspace-focus-coach")) return;
+          exitFocusExpanded();
+        }}
       >
         <div className="workspace-head">
           <h2 className="workspace-title">Devices</h2>
@@ -935,7 +1315,7 @@ export default function App() {
               type="button"
               className="workspace-rec-toggle"
               disabled={actionBusy}
-              onClick={() => setModal("video")}
+              onClick={openOrStartVideo}
               title="Start recording"
               aria-label="Start recording"
             >
@@ -957,6 +1337,7 @@ export default function App() {
                   recordingActive={recordingDeviceId !== null}
                   flash={flashDeviceIds.includes(slot.id)}
                   rebooting={rebootingIds.includes(slot.id)}
+                  rotationDeg={slotRotationDeg[slot.id] ?? 0}
                   focused={focusDeviceId === slot.id}
                   focusDimmed={focusDeviceId !== null && focusDeviceId !== slot.id}
                   onFocusHover={
@@ -967,6 +1348,11 @@ export default function App() {
                   onFocusLock={
                     focusDeviceId && !focusLocked
                       ? () => onFocusLockDevice(slot.id)
+                      : undefined
+                  }
+                  onFocusExpand={
+                    focusDeviceId && focusLocked && !focusExpanded
+                      ? () => onFocusExpandDevice(slot.id)
                       : undefined
                   }
                   canReorder={canReorder}
@@ -991,9 +1377,19 @@ export default function App() {
           </div>
         </div>
 
-        <p className="workspace-hint">
-          Hover a screen to type · click to touch · drag handle to reorder · drag strip to scroll
-        </p>
+        {focusDeviceId ? (
+          <p className="workspace-focus-coach" role="status">
+            {focusExpanded
+              ? "Esc or click outside to exit fullscreen"
+              : focusLocked
+                ? "Ctrl+click (⌘+click) for optional fullscreen · Esc or click outside to leave Focus"
+                : "Click a device to select it"}
+          </p>
+        ) : (
+          <p className="workspace-hint">
+            Hover a screen to type · click to touch · Ctrl/⌘+C/V clipboard · drag handle to reorder
+          </p>
+        )}
       </section>
 
       {pickerIndex !== null ? (
@@ -1087,6 +1483,58 @@ export default function App() {
           devices={addedAndroid}
           busy={actionBusy}
           onConfirm={runAirplane}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
+      {modal === "wifi" ? (
+        <DeviceToggleModal
+          title="Wi‑Fi"
+          devices={addedAndroid}
+          busy={actionBusy}
+          fetchStatus={getWifiStatus}
+          statusOnLabel="Wi‑Fi ON"
+          statusOffLabel="Wi‑Fi OFF"
+          onConfirm={runWifi}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
+      {modal === "vpn" ? (
+        <DeviceToggleModal
+          title="VPN"
+          description="Uses always-on VPN when configured; otherwise Enable opens system VPN settings."
+          devices={addedAndroid}
+          busy={actionBusy}
+          fetchStatus={getVpnStatus}
+          statusOnLabel="VPN ON"
+          statusOffLabel="VPN OFF"
+          onConfirm={runVpn}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
+      {modal === "battery-saver" ? (
+        <DeviceToggleModal
+          title="Battery saver"
+          devices={addedAndroid}
+          busy={actionBusy}
+          fetchStatus={getBatterySaverStatus}
+          statusOnLabel="Battery saver ON"
+          statusOffLabel="Battery saver OFF"
+          onConfirm={runBatterySaver}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
+      {modal === "rotate" ? (
+        <DeviceTargetModal
+          title="Rotate device"
+          description="Rotates device + screen 90° in the dashboard and turns rotation lock off on the phone."
+          confirmLabel="Rotate 90°"
+          devices={addedAndroid}
+          busy={actionBusy}
+          onConfirm={runRotate}
           onClose={() => setModal(null)}
         />
       ) : null}
