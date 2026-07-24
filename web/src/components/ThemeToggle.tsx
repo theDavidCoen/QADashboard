@@ -2,9 +2,19 @@ import { useEffect, useState } from "react";
 
 type Theme = "light" | "dark";
 
+function readStoredTheme(): Theme | null {
+  try {
+    const stored = localStorage.getItem("qa_dashboard_theme");
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    /* WebKit private profiles may lack localStorage */
+  }
+  return null;
+}
+
 function getInitialTheme(): Theme {
-  const stored = localStorage.getItem("qa_dashboard_theme");
-  if (stored === "light" || stored === "dark") return stored;
+  const stored = readStoredTheme();
+  if (stored) return stored;
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -13,7 +23,11 @@ export function ThemeToggle() {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("qa_dashboard_theme", theme);
+    try {
+      localStorage.setItem("qa_dashboard_theme", theme);
+    } catch {
+      /* ignore */
+    }
   }, [theme]);
 
   const isDark = theme === "dark";

@@ -6,6 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# WebKitGTK on Wayland can paint a blank white surface without this.
+export WEBKIT_DISABLE_COMPOSITING_MODE="${WEBKIT_DISABLE_COMPOSITING_MODE:-1}"
+
 notify() {
   if command -v notify-send >/dev/null 2>&1; then
     notify-send --app-name="QA Dashboard" "QA Dashboard" "$1" || true

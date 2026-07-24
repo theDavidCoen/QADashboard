@@ -12,6 +12,44 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_DIST = ROOT / "web" / "dist"
+# Must match desktop file basename (it.davidcoen.qa-dashboard.desktop) for GNOME/Dash.
+APP_ID = "it.davidcoen.qa-dashboard"
+ICON_CANDIDATES = (
+    Path.home() / ".local" / "share" / "icons" / "hicolor" / "256x256" / "apps" / "qa-dashboard.png",
+    Path.home() / ".local" / "share" / "icons" / "hicolor" / "scalable" / "apps" / "qa-dashboard.svg",
+    ROOT / "packaging" / "qa-dashboard.svg",
+)
+
+
+def _resolve_icon() -> str | None:
+    for path in ICON_CANDIDATES:
+        if path.is_file():
+            return str(path)
+    return None
+
+
+def _configure_gtk_app_id() -> None:
+    """pywebview creates Gtk.Application with id=None → generic dock icon on GNOME."""
+    import gi
+
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import Gdk, Gtk
+
+    if not getattr(Gtk.Application, "_qa_dashboard_app_id_patched", False):
+        _original_new = Gtk.Application.new
+
+        def _new_with_id(application_id=None, flags=0):  # noqa: ANN001
+            return _original_new(APP_ID, flags)
+
+        Gtk.Application.new = _new_with_id  # type: ignore[method-assign]
+        Gtk.Application._qa_dashboard_app_id_patched = True  # type: ignore[attr-defined]
+
+    # X11 fallback when Wayland app_id matching is unavailable.
+    try:
+        Gdk.set_program_class(APP_ID)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _server_cfg() -> tuple[str, int]:
@@ -89,6 +127,8 @@ def main() -> int:
 
     try:
         import gi  # noqa: F401  # required by pywebview GTK backend on Linux
+
+        _configure_gtk_app_id()
     except ImportError:
         msg = (
             "Missing PyGObject (gi). On Arch/CachyOS: sudo pacman -S python-gobject webkit2gtk-4.1\n"
@@ -133,8 +173,18 @@ def main() -> int:
     # Keep a reference so the window is not GC'd before start().
     assert window is not None
 
+    # private_mode=True (pywebview default) disables localStorage in WebKitGTK,
+    # which blanks the UI (theme script + ThemeToggle throw on boot).
+    storage = Path.home() / ".local" / "share" / "qa-dashboard" / "webview"
+    storage.mkdir(parents=True, exist_ok=True)
+
     try:
-        webview.start(gui="gtk")
+        webview.start(
+            gui="gtk",
+            private_mode=False,
+            storage_path=str(storage),
+            icon=_resolve_icon(),
+        )
     except KeyboardInterrupt:
         return 0
     except Exception as exc:  # noqa: BLE001 — surface backend errors to the user

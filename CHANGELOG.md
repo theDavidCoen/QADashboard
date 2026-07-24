@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-07-24
+
+### Fixed
+
+- **Desktop window blank** — pywebview default `private_mode` disabled `localStorage` in WebKitGTK; shell now uses persistent storage and guards theme `localStorage` access.
+- **Dash to Dock generic icon** — GTK application id `it.davidcoen.qa-dashboard` matches the installed `.desktop`; PNG icon sizes installed for the dock.
+
+### Changed
+
+- Desktop launcher id is now `it.davidcoen.qa-dashboard.desktop` (`./install-desktop.sh`); Wayland WebKit compositing workaround via `WEBKIT_DISABLE_COMPOSITING_MODE`.
+
 ## [0.2.1] — 2026-07-24
 
 ### Added

@@ -6,9 +6,13 @@
     <title>QA Dashboard — David Coen</title>
     <script>
       (function () {
-        var theme = localStorage.getItem("qa_dashboard_theme");
-        if (theme === "light" || theme === "dark") {
-          document.documentElement.setAttribute("data-theme", theme);
+        try {
+          var theme = localStorage.getItem("qa_dashboard_theme");
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.setAttribute("data-theme", theme);
+          }
+        } catch (e) {
+          /* WebKit private profiles may lack localStorage */
         }
       })();
     </script>
