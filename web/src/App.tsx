@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   killBackground,
   killForeground,
@@ -37,7 +37,7 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { VideoRecordModal } from "./components/VideoRecordModal";
 import { playShutterSound } from "./feedback";
 import type { DeviceInfo, SlotDevice } from "./types";
-import { APP_VERSION } from "./version";
+import { APP_LICENSE_URL, APP_REPO_URL, APP_VERSION } from "./version";
 
 function makeSlot(device: DeviceInfo): SlotDevice {
   return {
@@ -65,6 +65,8 @@ type ModalKind =
 export default function App() {
   const [available, setAvailable] = useState<DeviceInfo[]>([]);
   const [slots, setSlots] = useState<Array<SlotDevice | null>>([null]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [modal, setModal] = useState<ModalKind>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -251,6 +253,50 @@ export default function App() {
     setPickerIndex(null);
     setModal(null);
     setRecordingDeviceId(null);
+  };
+
+  const canReorder = connectedCount > 1;
+
+  const reorderSlots = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    setSlots((current) => {
+      if (from >= current.length || to >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  };
+
+  const onSlotDragStart = (index: number, event: DragEvent) => {
+    setDragIndex(index);
+    setDropIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+  };
+
+  const onSlotDragOver = (index: number, event: DragEvent) => {
+    if (dragIndex === null) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dropIndex !== index) setDropIndex(index);
+  };
+
+  const onSlotDragLeave = (index: number) => {
+    if (dropIndex === index) setDropIndex(null);
+  };
+
+  const onSlotDrop = (index: number, event: DragEvent) => {
+    event.preventDefault();
+    const from = dragIndex ?? Number(event.dataTransfer.getData("text/plain"));
+    if (Number.isFinite(from)) reorderSlots(from, index);
+    setDragIndex(null);
+    setDropIndex(null);
+  };
+
+  const onSlotDragEnd = () => {
+    setDragIndex(null);
+    setDropIndex(null);
   };
 
   const showResults = (label: string, results: ActionResult[]) => {
@@ -678,7 +724,31 @@ export default function App() {
             >
               davidcoen.it
             </a>
-            <span className="sidebar-credit__version">v{APP_VERSION}</span>
+            <p className="sidebar-credit__meta">
+              <span className="sidebar-credit__version">v{APP_VERSION}</span>
+              <span className="sidebar-credit__sep" aria-hidden="true">
+                ·
+              </span>
+              <a
+                className="sidebar-credit__link sidebar-credit__link--meta"
+                href={APP_REPO_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>
+              <span className="sidebar-credit__sep" aria-hidden="true">
+                ·
+              </span>
+              <a
+                className="sidebar-credit__link sidebar-credit__link--meta"
+                href={APP_LICENSE_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                MIT
+              </a>
+            </p>
           </div>
           <button
             type="button"
@@ -726,6 +796,14 @@ export default function App() {
                   recording={recordingDeviceId === slot.id}
                   flash={flashDeviceIds.includes(slot.id)}
                   rebooting={rebootingIds.includes(slot.id)}
+                  canReorder={canReorder}
+                  dragging={dragIndex === index}
+                  dropTarget={dragIndex !== null && dropIndex === index && dragIndex !== index}
+                  onDragStartSlot={(event) => onSlotDragStart(index, event)}
+                  onDragOverSlot={(event) => onSlotDragOver(index, event)}
+                  onDragLeaveSlot={() => onSlotDragLeave(index)}
+                  onDropSlot={(event) => onSlotDrop(index, event)}
+                  onDragEndSlot={onSlotDragEnd}
                 />
               ) : (
                 <EmptyAddSlot key={`empty-${index}`} onClick={() => setPickerIndex(index)} />
@@ -740,7 +818,9 @@ export default function App() {
           </div>
         </div>
 
-        <p className="workspace-hint">Click a screen to control · drag to scroll</p>
+        <p className="workspace-hint">
+          Click a screen to control · drag handle to reorder · drag strip to scroll
+        </p>
       </section>
 
       {pickerIndex !== null ? (

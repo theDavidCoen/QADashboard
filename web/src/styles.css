@@ -158,10 +158,29 @@ body {
   text-underline-offset: 0.12em;
 }
 
+.sidebar-credit__meta {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
 .sidebar-credit__version {
   color: color-mix(in srgb, var(--muted) 78%, transparent);
   font-size: 0.65rem;
   font-variant-numeric: tabular-nums;
+}
+
+.sidebar-credit__sep {
+  color: color-mix(in srgb, var(--muted) 55%, transparent);
+  font-size: 0.65rem;
+}
+
+.sidebar-credit__link--meta {
+  font-size: 0.65rem;
+  font-weight: 500;
 }
 
 .sidebar-settings {
@@ -629,6 +648,53 @@ body {
   background: transparent;
   overflow: visible;
   flex: 0 0 auto;
+}
+
+.device-slot__drag-handle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.55rem;
+  margin: 0.05rem 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--muted, #8a8f98);
+  cursor: grab;
+  touch-action: none;
+}
+
+.device-slot__drag-handle:hover,
+.device-slot__drag-handle:focus-visible {
+  background: color-mix(in srgb, var(--fg, #e8eaed) 10%, transparent);
+  color: var(--fg, #e8eaed);
+  outline: none;
+}
+
+.device-slot__drag-handle:active {
+  cursor: grabbing;
+}
+
+.device-slot__drag-grip {
+  width: 0.7rem;
+  height: 0.95rem;
+  background-image: radial-gradient(circle, currentColor 1.15px, transparent 1.25px);
+  background-size: 0.35rem 0.35rem;
+  background-position: center;
+  opacity: 0.85;
+}
+
+.device-slot--dragging {
+  opacity: 0.42;
+}
+
+.device-slot--drop-target {
+  outline: 2px dashed color-mix(in srgb, var(--accent, #6cb6ff) 75%, transparent);
+  outline-offset: 4px;
+  border-radius: 0.65rem;
 }
 
 .device-slot__header--spacer {

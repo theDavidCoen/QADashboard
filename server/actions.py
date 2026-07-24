@@ -866,19 +866,73 @@ def start_package_on_device(device: DeviceInfo, package: str, activity: str | No
 
 
 def _parse_recent_tasks(dumpsys_out: str) -> list[tuple[int, str, str]]:
-    """Return (task_id, task_type, package) from dumpsys activity recents."""
+    """Return (task_id, task_type, package) from dumpsys activity recents.
+
+    Prefer real packages from mActivityComponent / cmp= / pkg= — not task affinity
+    (MIUI uses affinities like ``A=10196:google.android.task.calendar``).
+    """
     tasks: list[tuple[int, str, str]] = []
-    for match in re.finditer(
-        r"\* Recent #\d+: Task\{[^#\n]*#(\d+)\s+type=(\w+)\s+(?:A=\d+:([^\s\}]+)|I=([^\s/\}]+))",
-        dumpsys_out,
-    ):
+    blocks = re.split(r"\n\s*\* Recent #\d+:\s*", dumpsys_out)
+    for block in blocks[1:]:
+        header = block.split("\n", 1)[0]
+        match = re.search(r"Task\{[^#\n]*#(\d+)\s+type=(\w+)", header)
+        if not match:
+            continue
         task_id = int(match.group(1))
         task_type = match.group(2)
-        package = (match.group(3) or match.group(4) or "").strip()
+        package = ""
+        for pattern in (
+            r"mActivityComponent=([^/\s]+)/",
+            r"\bcmp=([^/\s]+)/",
+            r"\bpkg=([^\s\}]+)",
+            r"\bI=([^/\s]+)/",
+            r"\bA=\d+:([^\s\}]+)",
+        ):
+            found = re.search(pattern, block)
+            if found:
+                package = found.group(1).strip()
+                break
         if "/" in package:
             package = package.split("/", 1)[0]
         tasks.append((task_id, task_type, package))
     return tasks
+
+
+_LAUNCHER_PACKAGES = {
+    "com.miui.home",
+    "com.android.launcher",
+    "com.android.launcher3",
+    "com.google.android.apps.nexuslauncher",
+    "com.huawei.android.launcher",
+    "com.sec.android.app.launcher",
+    "com.oppo.launcher",
+    "com.bbk.launcher2",
+}
+
+
+def _is_launcher_or_recents(package: str) -> bool:
+    pkg = (package or "").strip().lower()
+    if not pkg:
+        return False
+    if pkg in _LAUNCHER_PACKAGES:
+        return True
+    if "launcher" in pkg or pkg.endswith(".recents") or ".home.recents" in pkg:
+        return True
+    return False
+
+
+def _top_recent_app_task(serial: str) -> tuple[int, str] | None:
+    """Most-recent non-home app task (useful while Overview / Recents is showing)."""
+    _, out = _run(
+        ["adb", "-s", serial, "shell", "dumpsys", "activity", "recents"],
+        timeout=15,
+    )
+    for task_id, task_type, package in _parse_recent_tasks(out):
+        if task_type == "home" or _is_launcher_or_recents(package):
+            continue
+        if package:
+            return task_id, package
+    return None
 
 
 def _clear_recent_tasks(
@@ -896,7 +950,7 @@ def _clear_recent_tasks(
     )
     removed = 0
     for task_id, task_type, package in _parse_recent_tasks(out):
-        if task_type == "home":
+        if task_type == "home" or _is_launcher_or_recents(package):
             continue
         if only is not None and package not in only:
             continue
@@ -921,6 +975,8 @@ def kill_background_apps(device: DeviceInfo) -> ActionResult:
 
     app_info_mod._app_cache.pop(device.id, None)
     fg = (android_foreground_app(device.id).package or "").strip()
+    if _is_launcher_or_recents(fg):
+        fg = ""
 
     fg_q = fg.replace("'", "'\\''")
     script = (
@@ -958,7 +1014,11 @@ def kill_background_apps(device: DeviceInfo) -> ActionResult:
 
 
 def kill_foreground_app(device: DeviceInfo) -> ActionResult:
-    """Force-stop the foreground app and remove it from the multitasking/recents list."""
+    """Force-stop the foreground app and remove it from the multitasking/recents list.
+
+    When Overview/Recents is showing (launcher is 'foreground'), kill the top
+    visible recent app card instead of trying to force-stop the launcher.
+    """
     if device.platform != "android":
         return ActionResult(device.id, device.name, False, "Android only")
 
@@ -968,10 +1028,22 @@ def kill_foreground_app(device: DeviceInfo) -> ActionResult:
     app_info_mod._app_cache.pop(device.id, None)
     app = android_foreground_app(device.id)
     target = (app.package or "").strip()
-    if not target:
-        return ActionResult(device.id, device.name, False, "No foreground app")
-
     label = app.name or target
+    from_recents = False
+
+    if not target or _is_launcher_or_recents(target):
+        top = _top_recent_app_task(device.id)
+        if not top:
+            return ActionResult(
+                device.id,
+                device.name,
+                False,
+                "No app in recents to kill (Overview/home is active)",
+            )
+        _task_id, target = top
+        label = target
+        from_recents = True
+
     only = {target}
     if target.startswith("org.chromium.webapk."):
         only.add("com.android.chrome")
@@ -988,17 +1060,29 @@ def kill_foreground_app(device: DeviceInfo) -> ActionResult:
         )
 
     cleared = _clear_recent_tasks(device.id, only_packages=only)
+    # If Overview is open, also drop the matching stack by id when package clear missed it
+    if cleared == 0 and from_recents:
+        top = _top_recent_app_task(device.id)
+        if top and top[1] == target:
+            c, _ = _run(
+                ["adb", "-s", device.id, "shell", "cmd", "activity", "stack", "remove", str(top[0])],
+                timeout=8,
+            )
+            if c == 0:
+                cleared = 1
+
     _run(
         ["adb", "-s", device.id, "shell", "input", "keyevent", "KEYCODE_HOME"],
         timeout=8,
     )
 
     if code == 0:
+        where = " (from Overview)" if from_recents else ""
         return ActionResult(
             device.id,
             device.name,
             True,
-            f"Force-stopped {label}, cleared {cleared} from recents",
+            f"Force-stopped {label}{where}, cleared {cleared} from recents",
         )
     return ActionResult(device.id, device.name, False, out or "force-stop failed")
 

@@ -1,3 +1,4 @@
+import type { DragEvent } from "react";
 import { DeviceStream } from "./DeviceStream";
 import type { SlotDevice } from "../types";
 
@@ -8,6 +9,15 @@ interface DeviceSlotProps {
   recording?: boolean;
   flash?: boolean;
   rebooting?: boolean;
+  /** Enable drag handle when more than one device is connected. */
+  canReorder?: boolean;
+  dragging?: boolean;
+  dropTarget?: boolean;
+  onDragStartSlot?: (event: DragEvent) => void;
+  onDragOverSlot?: (event: DragEvent) => void;
+  onDragLeaveSlot?: () => void;
+  onDropSlot?: (event: DragEvent) => void;
+  onDragEndSlot?: () => void;
 }
 
 function resolveApp(device: SlotDevice): { name: string | null; build: string | null; url: string | null } {
@@ -62,6 +72,14 @@ export function DeviceSlot({
   recording = false,
   flash = false,
   rebooting = false,
+  canReorder = false,
+  dragging = false,
+  dropTarget = false,
+  onDragStartSlot,
+  onDragOverSlot,
+  onDragLeaveSlot,
+  onDropSlot,
+  onDragEndSlot,
 }: DeviceSlotProps) {
   if (!device) {
     return (
@@ -89,13 +107,33 @@ export function DeviceSlot({
     recording ? "device-slot--recording" : "",
     flash ? "device-slot--flash" : "",
     rebooting ? "device-slot--rebooting" : "",
+    dragging ? "device-slot--dragging" : "",
+    dropTarget ? "device-slot--drop-target" : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return (
-    <article className={slotClass}>
+    <article
+      className={slotClass}
+      onDragOver={canReorder ? onDragOverSlot : undefined}
+      onDragLeave={canReorder ? onDragLeaveSlot : undefined}
+      onDrop={canReorder ? onDropSlot : undefined}
+    >
       <header className="device-slot__header">
+        {canReorder ? (
+          <button
+            type="button"
+            className="device-slot__drag-handle"
+            draggable
+            onDragStart={onDragStartSlot}
+            onDragEnd={onDragEndSlot}
+            title="Drag to reorder"
+            aria-label="Drag to reorder device"
+          >
+            <span className="device-slot__drag-grip" aria-hidden="true" />
+          </button>
+        ) : null}
         <div className="device-slot__meta">
           <p className="device-slot__line" title={device.model}>
             <span className="device-slot__label">Device:</span> {deviceLine}

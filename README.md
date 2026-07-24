@@ -83,7 +83,38 @@ For higher stream resolution, change `max_size` in `config.yaml` (e.g. `1440`, o
 
 Launch / stop / capture / device actions (Edge, Edge Develop, Edge account, Arkade, screenshots, screen record, airplane mode, reboot, kill apps, etc.) can be toggled in Settings. Custom ADB one-shots can be added there as well.
 
-**Start Edge account** lists local users from the device SideMenu / PIN UI and from the encrypted vault (`~/.config/qa-dashboard/`). Saved passwords and PINs never leave this machine.
+**Start Edge account** lists local users from the device SideMenu / PIN UI and from the encrypted vault. See [Credential vault](#credential-vault) below.
+
+## Credential vault
+
+The vault stores **Edge account passwords and/or PINs** on this machine so **Start Edge account** can select a user and log in without retyping secrets each time. Files live under `~/.config/qa-dashboard/` by default (path configurable in Settings).
+
+### What it does
+
+- Saves username + password and/or PIN for Edge test accounts
+- Decrypts credentials only in the local FastAPI process when you unlock the vault (if a master password is set) and run an Edge account action
+- Exposes to the UI/API only **usernames** and flags like `hasPassword` / `hasPin` — never the secret values in responses or logs meant for the browser
+
+### Encryption
+
+At rest the vault blob is encrypted with **[Fernet](https://cryptography.io/en/latest/fernet/)** from the `cryptography` library:
+
+| Piece | Detail |
+|-------|--------|
+| Cipher | **AES-128** in CBC mode |
+| Integrity | **HMAC-SHA256** (authenticated encryption — tampering is detected) |
+| Why Fernet | Standard, audited construction for encrypting small secrets at rest; one API for encrypt + MAC so ciphertext cannot be silently altered |
+
+**Key material** (choose one mode in Settings):
+
+1. **Master password** — key derived with **PBKDF2-HMAC-SHA256** (390 000 iterations) and a per-vault salt file. Prefer this if the disk may be shared or backed up.
+2. **Machine key** — a random Fernet key in `~/.config/qa-dashboard/credentials.key` (mode `0600`). Convenient for a single trusted workstation; anyone with that file can decrypt the vault.
+
+Plaintext credentials are **not** written to disk. The master password, when used, is kept only in process memory after unlock until lock/restart — it is not stored.
+
+### Never online
+
+The vault is **local-only**. Credentials are **not** uploaded, synced, or sent to any remote service (no cloud, no Edge servers, no telemetry). They are used only over USB/`adb` on devices you control, from this workstation. The server binds to `127.0.0.1` by default so the dashboard API is not exposed on the LAN unless you change that.
 
 ## Configuration
 
@@ -107,7 +138,7 @@ Device mockup frames live under `web/public/mockups/` — see [web/public/mockup
 | UI | React + Vite, WebCodecs (Android H.264), JPEG stream (iOS) |
 | API | FastAPI — `/api/devices`, `/api/settings`, `/api/actions/*`, WebSocket `/ws/stream/{id}` |
 | Android | scrcpy server jar + adb forward + UI Automator for Edge account flows |
-| Vault | Local Fernet-encrypted credentials under `~/.config/qa-dashboard/` |
+| Vault | Local Fernet (AES-128 + HMAC) credential store — see [Credential vault](#credential-vault) |
 
 **iOS control (mouse/keyboard):** requires [WebDriverAgent](https://github.com/appium/WebDriverAgent) on the device (Xcode: build & run `WebDriverAgentRunner` once). Without WDA, streaming still works; taps/typing show an error in the status pill.
 
