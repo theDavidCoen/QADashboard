@@ -23,7 +23,8 @@ sudo pacman -S android-tools scrcpy libimobiledevice python-gobject webkit2gtk-4
 ## Quick start
 
 ```bash
-cd "~/Documenti/QA Dashboard"
+git clone https://github.com/theDavidCoen/QADashboard.git
+cd QADashboard
 chmod +x start.sh
 ./start.sh
 ```
@@ -37,7 +38,7 @@ The script creates a Python venv, installs dependencies, builds the web UI if ne
 For daily use without a browser tab, install a user launcher (GNOME/KDE):
 
 ```bash
-cd "~/Documenti/QA Dashboard"
+cd QADashboard   # repo root
 chmod +x install-desktop.sh start-app.sh
 ./install-desktop.sh
 ```
@@ -53,7 +54,7 @@ Development and new features: keep using `./start.sh` + browser (or Vite on `:51
 Terminal 1 — backend:
 
 ```bash
-cd "~/Documenti/QA Dashboard"
+cd QADashboard   # repo root
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m server.main
@@ -62,7 +63,7 @@ python3 -m venv --system-site-packages .venv
 Terminal 2 — frontend with hot reload:
 
 ```bash
-cd "~/Documenti/QA Dashboard/web"
+cd QADashboard/web
 npm install
 npm run dev
 ```
