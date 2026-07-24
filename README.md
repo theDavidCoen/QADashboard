@@ -35,10 +35,9 @@ The script creates a Python venv, installs dependencies, builds the web UI if ne
 
 ### Desktop app (app menu)
 
-For daily use without a browser tab, install a user launcher (GNOME/KDE):
+For daily use without a browser tab, install a user launcher (GNOME/KDE) from the **repository root**:
 
 ```bash
-cd QADashboard   # repo root
 chmod +x install-desktop.sh start-app.sh
 ./install-desktop.sh
 ```
@@ -51,10 +50,11 @@ Development and new features: keep using `./start.sh` + browser (or Vite on `:51
 
 ## Development
 
+From the repository root.
+
 Terminal 1 — backend:
 
 ```bash
-cd QADashboard   # repo root
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m server.main
@@ -63,7 +63,7 @@ python3 -m venv --system-site-packages .venv
 Terminal 2 — frontend with hot reload:
 
 ```bash
-cd QADashboard/web
+cd web
 npm install
 npm run dev
 ```
