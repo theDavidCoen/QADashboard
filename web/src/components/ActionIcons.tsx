@@ -215,6 +215,16 @@ export function IconFocus({ className }: IconProps) {
   );
 }
 
+export function IconScreenOff({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="6" y="3" width="12" height="18" rx="2.5" />
+      <path d="M10 17.5h4" />
+      <path d="M4 4l16 16" />
+    </Svg>
+  );
+}
+
 export type ActionIconName =
   | "play"
   | "code"
@@ -231,6 +241,7 @@ export type ActionIconName =
   | "vpn"
   | "wireguard"
   | "battery"
+  | "screenOff"
   | "rotate"
   | "unplug"
   | "user"
@@ -253,6 +264,7 @@ const ICONS: Record<ActionIconName, (props: IconProps) => ReactElement> = {
   vpn: IconVpn,
   wireguard: IconWireguard,
   battery: IconBattery,
+  screenOff: IconScreenOff,
   rotate: IconRotate,
   unplug: IconUnplug,
   user: IconUser,

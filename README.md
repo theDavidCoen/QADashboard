@@ -11,10 +11,11 @@ Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/G
 - **Node.js 20+** (to build the frontend)
 - **Android:** `adb`, `scrcpy` (USB debugging enabled)
 - **iOS:** `libimobiledevice` (`idevice_id`, `ideviceinfo`, `idevicescreenshot`; optional app version via AUR `ideviceinstaller`)
+- **Clipboard (screenshots):** `wl-clipboard` (Wayland) or `xclip` (X11) so captures can be pasted into other apps
 
 ```bash
 # Arch / CachyOS — ideviceinstaller is not in the official repos
-sudo pacman -S android-tools scrcpy libimobiledevice python-gobject webkit2gtk-4.1
+sudo pacman -S android-tools scrcpy libimobiledevice python-gobject webkit2gtk-4.1 wl-clipboard
 
 # Optional (iOS app version label only): AUR
 # yay -S ideviceinstaller

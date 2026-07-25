@@ -304,13 +304,56 @@ body {
   gap: 0.35rem;
 }
 
+.sidebar-actions__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.15rem 0.2rem 0.15rem 0.05rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar-actions__toggle:hover,
+.sidebar-actions__toggle:focus-visible {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  outline: none;
+}
+
 .sidebar-actions__label {
-  margin: 0 0 0.05rem;
+  margin: 0;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+.sidebar-actions__chevron {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid color-mix(in srgb, var(--muted) 85%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--muted) 85%, transparent);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  margin-right: 0.15rem;
+}
+
+.sidebar-actions__group.is-collapsed .sidebar-actions__chevron {
+  transform: rotate(-45deg);
+}
+
+.sidebar-actions__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .sidebar-action {
@@ -526,6 +569,38 @@ body {
 .workspace-rec-toggle:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.workspace-shot-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent, #38bdf8) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent, #38bdf8) 10%, var(--surface));
+  color: color-mix(in srgb, var(--accent, #38bdf8) 90%, var(--fg));
+  cursor: pointer;
+}
+
+.workspace-shot-toggle:hover:not(:disabled),
+.workspace-shot-toggle:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent, #38bdf8) 65%, transparent);
+  background: color-mix(in srgb, var(--accent, #38bdf8) 18%, var(--surface));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent, #38bdf8) 22%, transparent);
+  outline: none;
+}
+
+.workspace-shot-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.workspace-shot-toggle__icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 .workspace-rec-toggle__dot {

@@ -439,6 +439,10 @@ export function SettingsModal({
                   disabled={saving}
                 />
               </label>
+              <p className="settings-hint">
+                Screenshots and screen recordings. Screenshots are also copied to the system clipboard
+                when <code>wl-copy</code> or <code>xclip</code> is available.
+              </p>
               <ToggleList>
                 <ToggleSwitch
                   label="Sound effects"

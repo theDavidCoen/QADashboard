@@ -13,6 +13,7 @@ TYPE_INJECT_SCROLL_EVENT = 3
 TYPE_BACK_OR_SCREEN_ON = 4
 TYPE_GET_CLIPBOARD = 8
 TYPE_SET_CLIPBOARD = 9
+TYPE_SET_DISPLAY_POWER = 10
 
 DEVICE_MSG_CLIPBOARD = 0
 DEVICE_MSG_ACK_CLIPBOARD = 1
@@ -124,6 +125,11 @@ def back_or_screen_on(action: int = 0) -> bytes:
     return bytes([TYPE_BACK_OR_SCREEN_ON, action])
 
 
+def set_display_power(on: bool) -> bytes:
+    """Turn the physical display panel on/off while mirroring continues."""
+    return bytes([TYPE_SET_DISPLAY_POWER, 1 if on else 0])
+
+
 def _float_to_u16(value: float) -> int:
     clamped = max(0.0, min(1.0, value))
     return int(clamped * 0xFFFF)
@@ -148,6 +154,8 @@ def from_client_message(data: dict) -> bytes | None:
         return inject_text(text) if text else None
     if msg_type == "back":
         return back_or_screen_on(0)
+    if msg_type == "display_power":
+        return set_display_power(bool(data.get("on", True)))
     if msg_type == "clipboard_set":
         text = str(data.get("text", ""))
         if not text:

@@ -8,6 +8,7 @@ import re
 import socket
 import struct
 import subprocess
+import threading
 from pathlib import Path
 
 from .config import load_config
@@ -19,6 +20,14 @@ PACKET_HEADER_SIZE = 12
 SC_PACKET_FLAG_CONFIG = 1 << 62
 SC_PACKET_FLAG_KEY_FRAME = 1 << 61
 PORT_RANGE = range(27183, 27200)
+
+_active_streams: dict[str, "ScrcpyStream"] = {}
+_active_streams_lock = threading.Lock()
+
+
+def get_active_stream(serial: str) -> "ScrcpyStream | None":
+    with _active_streams_lock:
+        return _active_streams.get(serial)
 
 
 def _detect_scrcpy_version() -> str | None:
@@ -52,6 +61,7 @@ class ScrcpyStream:
         self.height = 0
         self._closed = False
         self._control_lock = asyncio.Lock()
+        self._control_send_lock = threading.Lock()
         self._server_log = ""
 
     @property
@@ -172,6 +182,8 @@ class ScrcpyStream:
                 self._listen_sock = None
 
             self._read_bootstrap()
+            with _active_streams_lock:
+                _active_streams[self.serial] = self
         except Exception as exc:
             self._server_log = self._drain_server_log()
             hint = self._server_log.strip() or str(exc)
@@ -256,10 +268,15 @@ class ScrcpyStream:
 
         return bytes([MSG_VIDEO, flags]) + payload
 
-    def send_control(self, payload: bytes) -> None:
+    def send_control(self, payload: bytes) -> bool:
         if self._closed or self._control_sock is None:
-            return
-        self._control_sock.sendall(payload)
+            return False
+        with self._control_send_lock:
+            try:
+                self._control_sock.sendall(payload)
+                return True
+            except OSError:
+                return False
 
     def recv_device_message(self) -> dict | None:
         """Blocking read of one scrcpy device→client control message."""
@@ -301,6 +318,9 @@ class ScrcpyStream:
 
     async def close(self) -> None:
         self._closed = True
+        with _active_streams_lock:
+            if _active_streams.get(self.serial) is self:
+                del _active_streams[self.serial]
         for sock in (self._video_sock, self._control_sock, self._listen_sock):
             if sock is not None:
                 try:

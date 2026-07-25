@@ -366,6 +366,104 @@ def set_battery_saver(device: DeviceInfo, enabled: bool) -> ActionResult:
     return ActionResult(device.id, device.name, False, out or f"Battery saver {'on' if enabled else 'off'} failed")
 
 
+# Serials whose panel we turned off via scrcpy SET_DISPLAY_POWER (dumpsys stays "on").
+_forced_display_off: set[str] = set()
+
+
+def get_display_power(device: DeviceInfo) -> ActionResult:
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+    # Scrcpy SurfaceControl off does not flip dumpsys; track dashboard-forced offs.
+    if device.id in _forced_display_off:
+        return ActionResult(device.id, device.name, True, "off")
+    _, out = _run(["adb", "-s", device.id, "shell", "dumpsys", "display"], timeout=12)
+    # Android 15+ `cmd display power-off` leaves mScreenState=ON but sets mBrightnessState=-1.
+    if re.search(r"mBrightnessState\s*=\s*-1(?:\.0+)?\b", out):
+        return ActionResult(device.id, device.name, True, "off")
+    # Prefer explicit panel state when present.
+    states = re.findall(r"mScreenState=([A-Z_]+)", out)
+    if states:
+        state = states[-1].upper()
+        if state in {"OFF", "OFF_SUSPEND"}:
+            return ActionResult(device.id, device.name, True, "off")
+        if state in {"ON", "ON_SUSPEND", "DOZE", "DOZE_SUSPEND"}:
+            return ActionResult(device.id, device.name, True, "on")
+    if re.search(r"mScreenOn\s*=\s*false", out, re.I) or re.search(r"screen.?on\s*[:=]\s*false", out, re.I):
+        return ActionResult(device.id, device.name, True, "off")
+    if re.search(r"mScreenOn\s*=\s*true", out, re.I):
+        return ActionResult(device.id, device.name, True, "on")
+    return ActionResult(device.id, device.name, True, "unknown")
+
+
+def _cmd_display_power_off(serial: str) -> bool:
+    code, _ = _run(["adb", "-s", serial, "shell", "cmd", "display", "power-off", "0"], timeout=8)
+    return code == 0
+
+
+def _cmd_display_power_on(serial: str) -> bool:
+    # Android 15+: restore panel without POWER key (avoids lock screen / fingerprint).
+    code, _ = _run(["adb", "-s", serial, "shell", "cmd", "display", "power-reset", "0"], timeout=8)
+    return code == 0
+
+
+def set_display_power(device: DeviceInfo, on: bool) -> ActionResult:
+    """Turn the physical display panel on/off; scrcpy stream should keep running when off."""
+    if device.platform != "android":
+        return ActionResult(device.id, device.name, False, "Android only")
+
+    from .scrcpy_control import set_display_power as encode_display_power
+    from .scrcpy_stream import get_active_stream
+
+    stream = get_active_stream(device.id)
+    serial = device.id
+
+    if on:
+        # Never inject KEYCODE_POWER — on Xiaomi/HyperOS it locks and demands fingerprint/PIN.
+        restored = _cmd_display_power_on(serial)
+        if stream is not None:
+            # Clears keepDisplayPowerOff + SurfaceControl POWER_MODE_NORMAL.
+            for _ in range(8):
+                stream.send_control(encode_display_power(True))
+                time.sleep(0.03)
+        _forced_display_off.discard(serial)
+        time.sleep(0.1)
+        status = get_display_power(device)
+        if status.ok and status.detail == "on":
+            return ActionResult(device.id, device.name, True, "on")
+        if restored or stream is not None:
+            return ActionResult(device.id, device.name, True, "on")
+        _run(["adb", "-s", serial, "shell", "cmd", "power", "wakeup"], timeout=8)
+        _run(["adb", "-s", serial, "shell", "input", "keyevent", "224"], timeout=8)
+        return ActionResult(device.id, device.name, True, "on (wake sent)")
+
+    # Screen OFF with an active stream: use scrcpy SET_DISPLAY_POWER only.
+    # `cmd display power-off` blanks the panel but blocks injected mouse/keyboard input.
+    if stream is not None:
+        if stream.send_control(encode_display_power(False)):
+            _forced_display_off.add(serial)
+            return ActionResult(device.id, device.name, True, "off (stream stays on)")
+        return ActionResult(device.id, device.name, False, "Failed to send display power over scrcpy")
+
+    # No stream: Android 15+ DisplayManager power-off (no mirror to control anyway).
+    if _cmd_display_power_off(serial):
+        _forced_display_off.add(serial)
+        return ActionResult(device.id, device.name, True, "off")
+
+    code, out = _run(
+        ["adb", "-s", serial, "shell", "input", "keyevent", "223"],
+        timeout=8,
+    )
+    if code == 0:
+        _forced_display_off.add(serial)
+        return ActionResult(device.id, device.name, True, "off (no active stream; used keyevent)")
+    return ActionResult(
+        device.id,
+        device.name,
+        False,
+        out or "Display power failed — open the device stream first",
+    )
+
+
 def _vpn_iface_up(device_id: str) -> bool:
     _, out = _run(["adb", "-s", device_id, "shell", "ip", "-o", "link", "show", "up"], timeout=8)
     for line in out.splitlines():
@@ -870,6 +968,14 @@ def run_battery_saver_status(device_ids: list[str] | None = None) -> list[Action
     return [get_battery_saver(d) for d in _resolve_targets(device_ids)]
 
 
+def run_display_power(on: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [set_display_power(d, on) for d in _resolve_targets(device_ids)]
+
+
+def run_display_power_status(device_ids: list[str] | None = None) -> list[ActionResult]:
+    return [get_display_power(d) for d in _resolve_targets(device_ids)]
+
+
 def run_vpn(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:
     return [set_vpn(d, enabled) for d in _resolve_targets(device_ids)]
 
@@ -982,12 +1088,66 @@ def _safe_slug(text: str) -> str:
     return slug.strip("-")[:48]
 
 
+def _copy_png_to_clipboard(path: Path) -> bool:
+    """Put a PNG on the desktop clipboard (Wayland wl-copy, else X11 xclip)."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    if not data.startswith(b"\x89PNG") or len(data) < 1000:
+        return False
+
+    # wl-copy keeps a background process to own the selection — do not wait for exit.
+    for cmd in (
+        ["wl-copy", "--type", "image/png"],
+        ["wl-copy", "-t", "image/png"],
+    ):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            assert proc.stdin is not None
+            proc.stdin.write(data)
+            proc.stdin.close()
+            time.sleep(0.05)
+            if proc.poll() is not None and proc.returncode != 0:
+                continue
+            return True
+        except (FileNotFoundError, OSError):
+            continue
+
+    # xclip usually exits after stuffing the clipboard.
+    try:
+        result = subprocess.run(
+            ["xclip", "-selection", "clipboard", "-t", "image/png"],
+            input=data,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+            check=False,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def screenshot_device(device: DeviceInfo) -> ActionResult:
     if device.platform != "android":
         return ActionResult(device.id, device.name, False, "Android only")
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     local = screenshots_dir() / f"QA-{_safe_slug(device.name)}-{stamp}.png"
+
+    def _ok_result() -> ActionResult:
+        clip = _copy_png_to_clipboard(local)
+        detail = str(local)
+        if clip:
+            detail = f"{local} · clipboard"
+        return ActionResult(device.id, device.name, True, detail)
 
     # Prefer exec-out (no device temp file; reliable with scrcpy active)
     try:
@@ -1000,7 +1160,7 @@ def screenshot_device(device: DeviceInfo) -> ActionResult:
         data = result.stdout or b""
         if result.returncode == 0 and data.startswith(b"\x89PNG") and len(data) > 1000:
             local.write_bytes(data)
-            return ActionResult(device.id, device.name, True, str(local))
+            return _ok_result()
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         exec_err = str(exc)
     else:
@@ -1023,7 +1183,7 @@ def screenshot_device(device: DeviceInfo) -> ActionResult:
     _run(["adb", "-s", device.id, "shell", "rm", "-f", remote], timeout=8)
     if code2 != 0 or not local.is_file() or local.stat().st_size < 1000:
         return ActionResult(device.id, device.name, False, out2 or "pull failed")
-    return ActionResult(device.id, device.name, True, str(local))
+    return _ok_result()
 
 
 _recording_procs: dict[str, subprocess.Popen[str]] = {}
@@ -1378,6 +1538,18 @@ async def battery_saver_async(
 async def battery_saver_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, run_battery_saver_status, device_ids)
+
+
+async def display_power_async(
+    on: bool, device_ids: list[str] | None = None
+) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_display_power, on, device_ids)
+
+
+async def display_power_status_async(device_ids: list[str] | None = None) -> list[ActionResult]:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, run_display_power_status, device_ids)
 
 
 async def vpn_async(enabled: bool, device_ids: list[str] | None = None) -> list[ActionResult]:

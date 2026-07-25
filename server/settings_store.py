@@ -31,6 +31,7 @@ SIDEBAR_ACTION_DEFS: list[dict[str, str]] = [
     {"id": "vpn", "label": "VPN", "group": "Device"},
     {"id": "vpn_wireguard", "label": "VPN WireGuard", "group": "Device"},
     {"id": "battery_saver", "label": "Battery saver", "group": "Device"},
+    {"id": "screen_off", "label": "Screen OFF / ON", "group": "Device"},
     {"id": "rotate", "label": "Rotate device", "group": "Device"},
     {"id": "disconnect_all", "label": "Disconnect all devices", "group": "Device"},
 ]

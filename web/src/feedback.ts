@@ -10,10 +10,16 @@ export function getSoundEffectsEnabled(): boolean {
   return soundEffectsEnabled;
 }
 
+const SHUTTER_SRC = `${import.meta.env.BASE_URL}sounds/camera-shutter.oga`;
+
 let shutterAudio: HTMLAudioElement | null = null;
 
 function playAudio(el: HTMLAudioElement): void {
-  el.currentTime = 0;
+  try {
+    el.currentTime = 0;
+  } catch {
+    /* ignore seek errors on fresh elements */
+  }
   void el.play().catch(() => {
     /* ignore autoplay / decode errors */
   });
@@ -21,18 +27,27 @@ function playAudio(el: HTMLAudioElement): void {
 
 function getShutterAudio(): HTMLAudioElement {
   if (!shutterAudio) {
-    shutterAudio = new Audio(`${import.meta.env.BASE_URL}sounds/camera-shutter.oga`);
+    shutterAudio = new Audio(SHUTTER_SRC);
     shutterAudio.preload = "auto";
   }
   return shutterAudio;
 }
 
+/** Freedesktop/GNOME camera-shutter — same as system Screenshot on CachyOS. */
 export function playShutterSound(): void {
   if (!soundEffectsEnabled) return;
   try {
-    playAudio(getShutterAudio());
+    // Prefer a fresh element so overlapping shots work and gesture unlock is cleaner.
+    const fresh = new Audio(SHUTTER_SRC);
+    void fresh.play().catch(() => {
+      playAudio(getShutterAudio());
+    });
   } catch {
-    /* ignore */
+    try {
+      playAudio(getShutterAudio());
+    } catch {
+      /* ignore */
+    }
   }
 }
 

@@ -245,6 +245,25 @@ export async function getBatterySaverStatus(deviceId?: string): Promise<ActionRe
   return payload;
 }
 
+export function setDisplayPower(enabled: boolean, deviceIds?: string[]) {
+  return postAction("/api/actions/display-power", {
+    enabled,
+    deviceIds: deviceIds?.length ? deviceIds : undefined,
+  });
+}
+
+export async function getDisplayPowerStatus(deviceId?: string): Promise<ActionResponse> {
+  const query = deviceId ? `?device_id=${encodeURIComponent(deviceId)}` : "";
+  const response = await fetch(`/api/actions/display-power${query}`);
+  const payload = (await response.json().catch(() => ({}))) as ActionResponse & {
+    detail?: string;
+  };
+  if (!response.ok) {
+    throw new Error(payload.detail || `Request failed (${response.status})`);
+  }
+  return payload;
+}
+
 export function rotateDevices(deviceIds?: string[]) {
   return postAction("/api/actions/rotate", {
     deviceIds: deviceIds?.length ? deviceIds : undefined,

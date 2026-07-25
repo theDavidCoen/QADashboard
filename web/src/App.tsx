@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
 import {
   killBackground,
   killForeground,
@@ -7,10 +15,12 @@ import {
   rotateDevices,
   setAirplaneMode,
   setBatterySaver,
+  setDisplayPower,
   setVpn,
   setWifi,
   setWireguard,
   getBatterySaverStatus,
+  getDisplayPowerStatus,
   getVpnStatus,
   getWifiStatus,
   getWireguardStatus,
@@ -75,11 +85,30 @@ type ModalKind =
   | "vpn"
   | "vpn-wireguard"
   | "battery-saver"
+  | "screen-off"
   | "rotate"
   | "reboot"
   | "screenshot"
   | "video"
   | null;
+
+const SIDEBAR_GROUPS_COLLAPSED_KEY = "qa-dashboard.sidebarGroupsCollapsed";
+
+function loadCollapsedSidebarGroups(): Record<string, boolean> {
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_GROUPS_COLLAPSED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const next: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value === "boolean") next[key] = value;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
 
 export default function App() {
   const [available, setAvailable] = useState<DeviceInfo[]>([]);
@@ -131,6 +160,42 @@ export default function App() {
     "Device",
     "Custom ADB",
   ]);
+  const [collapsedSidebarGroups, setCollapsedSidebarGroups] = useState<Record<string, boolean>>(
+    loadCollapsedSidebarGroups,
+  );
+
+  const toggleSidebarGroup = (group: string) => {
+    setCollapsedSidebarGroups((prev) => {
+      const next = { ...prev, [group]: !prev[group] };
+      try {
+        window.localStorage.setItem(SIDEBAR_GROUPS_COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  };
+
+  const renderSidebarGroup = (group: string, body: ReactNode) => {
+    const collapsed = collapsedSidebarGroups[group] === true;
+    return (
+      <div
+        key={group}
+        className={`sidebar-actions__group${collapsed ? " is-collapsed" : ""}`}
+      >
+        <button
+          type="button"
+          className="sidebar-actions__toggle"
+          aria-expanded={!collapsed}
+          onClick={() => toggleSidebarGroup(group)}
+        >
+          <span className="sidebar-actions__label">{group}</span>
+          <span className="sidebar-actions__chevron" aria-hidden="true" />
+        </button>
+        {!collapsed ? <div className="sidebar-actions__items">{body}</div> : null}
+      </div>
+    );
+  };
 
   const EDGE_ACTION_IDS = useMemo(
     () => new Set(["start_edge", "start_edge_account", "start_edge_develop"]),
@@ -693,6 +758,21 @@ export default function App() {
     }
   };
 
+  const runDisplayPower = async (enabled: boolean, deviceIds: string[] | undefined) => {
+    if (actionBusy || !actionsEnabled) return;
+    setModal(null);
+    setActionBusy(true);
+    try {
+      const targets = resolveActionTargets(deviceIds);
+      const payload = await setDisplayPower(enabled, targets);
+      showResults(enabled ? "Screen ON" : "Screen OFF", payload.results);
+    } catch (error) {
+      setActionNote(`Screen OFF / ON: ${error instanceof Error ? error.message : "failed"}`);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const runRotate = async (deviceIds: string[] | undefined) => {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
@@ -746,12 +826,13 @@ export default function App() {
     if (actionBusy || !actionsEnabled) return;
     setModal(null);
     setActionBusy(true);
+    // Play during the user-gesture turn — after await, WebKit/Chrome often block HTMLAudio.
+    playShutterSound();
     try {
       const targets = resolveActionTargets(deviceIds) ?? [];
       const payload = await takeScreenshot(targets);
       const okIds = payload.results.filter((item) => item.ok).map((item) => item.deviceId);
       if (okIds.length) {
-        playShutterSound();
         setFlashDeviceIds(okIds);
         window.setTimeout(() => setFlashDeviceIds([]), 450);
       }
@@ -1012,9 +1093,9 @@ export default function App() {
         <nav className="sidebar-actions" aria-label="Device actions">
           {sidebarGroupOrder.map((group) => {
             if (group === "Launch") {
-              return (
-                <div key={group} className="sidebar-actions__group">
-                  <p className="sidebar-actions__label">Launch</p>
+              return renderSidebarGroup(
+                group,
+                <>
                   {actionVisible("start_edge") ? (
                     <button
                       type="button"
@@ -1081,13 +1162,13 @@ export default function App() {
                       <span>Start other app</span>
                     </button>
                   ) : null}
-                </div>
+                </>,
               );
             }
             if (group === "Stop") {
-              return (
-                <div key={group} className="sidebar-actions__group">
-                  <p className="sidebar-actions__label">Stop</p>
+              return renderSidebarGroup(
+                group,
+                <>
                   {actionVisible("kill_background") ? (
                     <button
                       type="button"
@@ -1110,13 +1191,13 @@ export default function App() {
                       <span>Kill app</span>
                     </button>
                   ) : null}
-                </div>
+                </>,
               );
             }
             if (group === "Capture") {
-              return (
-                <div key={group} className="sidebar-actions__group">
-                  <p className="sidebar-actions__label">Capture</p>
+              return renderSidebarGroup(
+                group,
+                <>
                   {actionVisible("screenshot") ? (
                     <button
                       type="button"
@@ -1139,13 +1220,13 @@ export default function App() {
                       <span>Video recording</span>
                     </button>
                   ) : null}
-                </div>
+                </>,
               );
             }
             if (group === "Device") {
-              return (
-                <div key={group} className="sidebar-actions__group">
-                  <p className="sidebar-actions__label">Device</p>
+              return renderSidebarGroup(
+                group,
+                <>
                   {actionVisible("reboot") ? (
                     <button
                       type="button"
@@ -1212,6 +1293,17 @@ export default function App() {
                       <span>Battery saver</span>
                     </button>
                   ) : null}
+                  {actionVisible("screen_off") ? (
+                    <button
+                      type="button"
+                      className="sidebar-action"
+                      disabled={actionBusy || !actionsEnabled}
+                      onClick={() => setModal("screen-off")}
+                    >
+                      <ActionIcon name="screenOff" />
+                      <span>Screen OFF / ON</span>
+                    </button>
+                  ) : null}
                   {actionVisible("rotate") ? (
                     <button
                       type="button"
@@ -1234,14 +1326,14 @@ export default function App() {
                       <span>Disconnect all devices</span>
                     </button>
                   ) : null}
-                </div>
+                </>,
               );
             }
             if (group === "Custom ADB") {
               if (customAdbActions.length === 0) return null;
-              return (
-                <div key={group} className="sidebar-actions__group">
-                  <p className="sidebar-actions__label">Custom ADB</p>
+              return renderSidebarGroup(
+                group,
+                <>
                   {customAdbActions.map((action) => (
                     <button
                       key={action.id}
@@ -1255,7 +1347,7 @@ export default function App() {
                       <span>{action.label}</span>
                     </button>
                   ))}
-                </div>
+                </>,
               );
             }
             return null;
@@ -1387,6 +1479,19 @@ export default function App() {
             >
               <span className="workspace-rec-toggle__dot" aria-hidden="true" />
               <span>Rec</span>
+            </button>
+          ) : null}
+
+          {!recordingDeviceId && soleAndroidId && actionVisible("screenshot") ? (
+            <button
+              type="button"
+              className="workspace-shot-toggle"
+              disabled={actionBusy || !actionsEnabled}
+              onClick={() => void runScreenshot([soleAndroidId])}
+              title="Screenshot"
+              aria-label="Take screenshot"
+            >
+              <ActionIcon name="camera" className="workspace-shot-toggle__icon" />
             </button>
           ) : null}
         </div>
@@ -1612,6 +1717,22 @@ export default function App() {
         />
       ) : null}
 
+      {modal === "screen-off" ? (
+        <DeviceToggleModal
+          title="Screen OFF / ON"
+          description="Turns the physical panel off while the mirror stays interactive (needs an active Android stream)."
+          devices={addedAndroid}
+          busy={actionBusy}
+          fetchStatus={getDisplayPowerStatus}
+          onLabel="Screen ON"
+          offLabel="Screen OFF"
+          statusOnLabel="Screen ON"
+          statusOffLabel="Screen OFF"
+          onConfirm={runDisplayPower}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+
       {modal === "rotate" ? (
         <DeviceTargetModal
           title="Rotate device"
@@ -1640,7 +1761,7 @@ export default function App() {
       {modal === "screenshot" ? (
         <DeviceTargetModal
           title="Screenshot"
-          description={`Saves a PNG under ${capturePathHint}.`}
+          description={`Saves a PNG under ${capturePathHint} and copies it to the clipboard.`}
           confirmLabel="Capture"
           devices={addedAndroid}
           busy={actionBusy}

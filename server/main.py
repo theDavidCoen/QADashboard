@@ -19,6 +19,8 @@ from .actions import (
     battery_saver_async,
     battery_saver_status_async,
     custom_adb_async,
+    display_power_async,
+    display_power_status_async,
     force_stop_async,
     kill_background_async,
     kill_foreground_async,
@@ -244,6 +246,21 @@ async def action_battery_saver(body: AirplaneBody) -> dict:
 async def action_battery_saver_status(device_id: str | None = None) -> dict:
     ids = [device_id] if device_id else None
     results = await battery_saver_status_async(ids)
+    return {"results": [item.to_dict() for item in results]}
+
+
+@app.post("/api/actions/display-power")
+async def action_display_power(body: AirplaneBody) -> dict:
+    results = await display_power_async(body.enabled, body.device_ids)
+    if not results:
+        raise HTTPException(status_code=404, detail="No Android devices matched")
+    return {"enabled": body.enabled, "results": [item.to_dict() for item in results]}
+
+
+@app.get("/api/actions/display-power")
+async def action_display_power_status(device_id: str | None = None) -> dict:
+    ids = [device_id] if device_id else None
+    results = await display_power_status_async(ids)
     return {"results": [item.to_dict() for item in results]}
 
 
@@ -611,6 +628,10 @@ def mount_frontend() -> None:
         mockups_dir = WEB_DIST / "mockups"
         if mockups_dir.exists():
             app.mount("/mockups", StaticFiles(directory=mockups_dir), name="mockups")
+
+        sounds_dir = WEB_DIST / "sounds"
+        if sounds_dir.exists():
+            app.mount("/sounds", StaticFiles(directory=sounds_dir), name="sounds")
 
         @app.get("/{full_path:path}")
         async def spa(full_path: str) -> FileResponse:
