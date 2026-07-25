@@ -131,7 +131,9 @@ Plaintext credentials are **not** written to disk. The master password, when use
 
 ### Never online
 
-The vault is **local-only**. Credentials are **not** uploaded, synced, or sent to any remote service (no cloud, no Edge servers, no telemetry). They are used only over USB/`adb` on devices you control, from this workstation. The server binds to `127.0.0.1` by default so the dashboard API is not exposed on the LAN unless you change that.
+The vault is **local-only**. Credentials are **not** uploaded, synced, or sent to any remote service (no cloud, no Edge servers, no telemetry). They are used only over USB/`adb` on devices you control, from this workstation.
+
+Keep `server.host` at **`127.0.0.1`** (the default). Do **not** bind to `0.0.0.0` or a LAN IP: the dashboard API has no auth, and Settings / Edge-account flows can send vault unlock and account secrets in request bodies. Exposing the port on the network would let anyone on that network use the API and potentially reach those endpoints.
 
 ## Configuration
 
@@ -139,7 +141,7 @@ Edit `config.yaml`:
 
 | Key | Purpose |
 |-----|---------|
-| `server.host` / `server.port` | Bind address (default `127.0.0.1:9470`) |
+| `server.host` / `server.port` | Bind address (default **`127.0.0.1:9470`** — keep loopback only; see [Never online](#never-online)) |
 | `scrcpy.*` | Stream quality (`max_size` default **1080**, `bit_rate`, `max_fps`, server jar/version) |
 | `ios.screenshot_fps` | iOS refresh rate (default 8 fps) |
 | `apps.edge.*` / `apps.edge_develop.*` | Package / bundle IDs for labels and launch |
