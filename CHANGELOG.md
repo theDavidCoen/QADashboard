@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-07-27
+
+### Added
+
+- **Stream quality** — Settings → General presets (Low / Medium / High 30 / High / Ultra) for Android scrcpy mirrors; reconnect the device to apply.
+- **Screen OFF / ON** — blank the physical panel while the mirror stays interactive (scrcpy `SET_DISPLAY_POWER` + Android `display power-reset`, no POWER lock).
+- **Collapsible sidebar groups** — Launch / Stop / Capture / Device / Custom ADB collapse state persists in `localStorage`.
+- **Workspace screenshot control** — camera button next to Rec when a single Android device is connected.
+
+### Fixed
+
+- **Screenshot shutter sound** — play on the user gesture (before the API round-trip) so WebKitGTK does not block audio.
+- **Desktop Settings stale UI** — no-store for `index.html`, cache-busting URL, and a fresh WebKit storage folder so new Settings controls appear after upgrades.
+
 ## [0.2.3] — 2026-07-24
 
 ### Fixed

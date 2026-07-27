@@ -209,9 +209,12 @@ def main() -> int:
     if not _ensure_server(host, port, base):
         return 1
 
+    # Bust WebKitGTK HTTP cache that otherwise keeps a stale index.html / UI.
+    ui_url = f"{base}/?v={int(time.time())}"
+
     window = webview.create_window(
         "QA Dashboard",
-        base,
+        ui_url,
         width=1440,
         height=900,
         min_size=(960, 640),
@@ -222,7 +225,9 @@ def main() -> int:
 
     # private_mode=True (pywebview default) disables localStorage in WebKitGTK,
     # which blanks the UI (theme script + ThemeToggle throw on boot).
-    storage = Path.home() / ".local" / "share" / "qa-dashboard" / "webview"
+    # Bump the storage folder when the UI changes so WebKitGTK does not keep a
+    # stale index.html from a previous build (common on desktop).
+    storage = Path.home() / ".local" / "share" / "qa-dashboard" / "webview-v2"
     storage.mkdir(parents=True, exist_ok=True)
 
     try:

@@ -113,6 +113,7 @@ class SettingsPatchBody(BaseModel):
     edge_features_enabled: bool | None = Field(default=None, alias="edgeFeaturesEnabled")
     arkade_features_enabled: bool | None = Field(default=None, alias="arkadeFeaturesEnabled")
     sound_effects_enabled: bool | None = Field(default=None, alias="soundEffectsEnabled")
+    stream_quality: str | None = Field(default=None, alias="streamQuality")
     sidebar_actions: dict[str, bool] | None = Field(default=None, alias="sidebarActions")
     sidebar_group_order: list[str] | None = Field(default=None, alias="sidebarGroupOrder")
     custom_adb_actions: list[dict] | None = Field(default=None, alias="customAdbActions")
@@ -434,6 +435,7 @@ def _settings_response(data: dict | None = None) -> dict:
         "edgeFeaturesEnabled": bool(settings.get("edgeFeaturesEnabled", True)),
         "arkadeFeaturesEnabled": bool(settings.get("arkadeFeaturesEnabled", True)),
         "soundEffectsEnabled": bool(settings.get("soundEffectsEnabled", True)),
+        "streamQuality": settings.get("streamQuality", "high"),
         "sidebarActions": settings["sidebarActions"],
         "sidebarGroupOrder": settings["sidebarGroupOrder"],
         "sidebarActionDefs": SIDEBAR_ACTION_DEFS,
@@ -459,6 +461,8 @@ async def put_settings(body: SettingsPatchBody) -> dict:
         patch["arkadeFeaturesEnabled"] = body.arkade_features_enabled
     if body.sound_effects_enabled is not None:
         patch["soundEffectsEnabled"] = body.sound_effects_enabled
+    if body.stream_quality is not None:
+        patch["streamQuality"] = body.stream_quality
     if body.sidebar_actions is not None:
         patch["sidebarActions"] = body.sidebar_actions
     if body.sidebar_group_order is not None:
@@ -633,12 +637,32 @@ def mount_frontend() -> None:
         if sounds_dir.exists():
             app.mount("/sounds", StaticFiles(directory=sounds_dir), name="sounds")
 
+        def _index_response() -> FileResponse:
+            return FileResponse(
+                WEB_DIST / "index.html",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate",
+                    "Pragma": "no-cache",
+                },
+            )
+
+        @app.get("/")
+        async def spa_root() -> FileResponse:
+            return _index_response()
+
         @app.get("/{full_path:path}")
         async def spa(full_path: str) -> FileResponse:
             candidate = WEB_DIST / full_path
             if full_path and candidate.is_file():
-                return FileResponse(candidate)
-            return FileResponse(WEB_DIST / "index.html")
+                # Hashed Vite assets are fine to cache; HTML must not be.
+                headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+                if full_path.endswith((".html",)):
+                    headers = {
+                        "Cache-Control": "no-store, no-cache, must-revalidate",
+                        "Pragma": "no-cache",
+                    }
+                return FileResponse(candidate, headers=headers)
+            return _index_response()
 
 
 mount_frontend()

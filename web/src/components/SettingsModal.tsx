@@ -9,6 +9,8 @@ import {
   type CustomAdbAction,
   type SettingsPayload,
   type SidebarActionDef,
+  type StreamQuality,
+  STREAM_QUALITY_OPTIONS,
 } from "../api/settings";
 import { useDialogModal } from "../hooks/useDialogModal";
 
@@ -28,6 +30,7 @@ type SettingsSnapshot = {
   edgeFeaturesEnabled: boolean;
   arkadeFeaturesEnabled: boolean;
   soundEffectsEnabled: boolean;
+  streamQuality: StreamQuality;
   sidebarActions: Record<string, boolean>;
   sidebarGroupOrder: string[];
   customActions: CustomAdbAction[];
@@ -37,6 +40,13 @@ const EDGE_ACTION_IDS = new Set(["start_edge", "start_edge_account", "start_edge
 const ARKADE_ACTION_IDS = new Set(["start_arkade"]);
 const CUSTOM_ADB_GROUP = "Custom ADB";
 
+function normalizeStreamQuality(raw: unknown): StreamQuality {
+  if (raw === "low" || raw === "medium" || raw === "high" || raw === "high_30" || raw === "ultra") {
+    return raw;
+  }
+  return "high";
+}
+
 function snapshotOf(parts: SettingsSnapshot): string {
   return JSON.stringify({
     capturePath: parts.capturePath.trim(),
@@ -44,6 +54,7 @@ function snapshotOf(parts: SettingsSnapshot): string {
     edgeFeaturesEnabled: parts.edgeFeaturesEnabled,
     arkadeFeaturesEnabled: parts.arkadeFeaturesEnabled,
     soundEffectsEnabled: parts.soundEffectsEnabled,
+    streamQuality: parts.streamQuality,
     sidebarActions: parts.sidebarActions,
     sidebarGroupOrder: parts.sidebarGroupOrder,
     customActions: parts.customActions.map((item) => ({
@@ -109,6 +120,7 @@ export function SettingsModal({
   const [edgeFeaturesEnabled, setEdgeFeaturesEnabled] = useState(edgeInit);
   const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(arkadeInit);
   const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(soundInit);
+  const [streamQuality, setStreamQuality] = useState<StreamQuality>("high");
   const [sidebarActions, setSidebarActions] = useState<Record<string, boolean>>({});
   const [sidebarGroupOrder, setSidebarGroupOrder] = useState<string[]>([]);
   const [sidebarDefs, setSidebarDefs] = useState<SidebarActionDef[]>([]);
@@ -136,6 +148,7 @@ export function SettingsModal({
     nextEdge: boolean,
     nextArkade: boolean,
     nextSound: boolean,
+    nextQuality: StreamQuality,
     nextFlags: Record<string, boolean>,
     nextGroupOrder: string[],
     nextCustoms: CustomAdbAction[],
@@ -146,6 +159,7 @@ export function SettingsModal({
       edgeFeaturesEnabled: nextEdge,
       arkadeFeaturesEnabled: nextArkade,
       soundEffectsEnabled: nextSound,
+      streamQuality: nextQuality,
       sidebarActions: nextFlags,
       sidebarGroupOrder: nextGroupOrder,
       customActions: nextCustoms,
@@ -154,6 +168,7 @@ export function SettingsModal({
 
   const applySettings = (payload: SettingsPayload, asBaseline = true) => {
     const soundOn = payload.soundEffectsEnabled !== false;
+    const quality = normalizeStreamQuality(payload.streamQuality);
     const groupOrder = payload.sidebarGroupOrder?.length
       ? payload.sidebarGroupOrder
       : ["Launch", "Stop", "Capture", "Device", CUSTOM_ADB_GROUP];
@@ -162,6 +177,7 @@ export function SettingsModal({
     setEdgeFeaturesEnabled(payload.edgeFeaturesEnabled === true);
     setArkadeFeaturesEnabled(payload.arkadeFeaturesEnabled === true);
     setSoundEffectsEnabled(soundOn);
+    setStreamQuality(quality);
     setSidebarActions(payload.sidebarActions);
     setSidebarGroupOrder(groupOrder);
     setSidebarDefs(payload.sidebarActionDefs);
@@ -185,6 +201,7 @@ export function SettingsModal({
         payload.edgeFeaturesEnabled === true,
         payload.arkadeFeaturesEnabled === true,
         soundOn,
+        quality,
         payload.sidebarActions,
         groupOrder,
         payload.customAdbActions,
@@ -200,6 +217,7 @@ export function SettingsModal({
       edgeFeaturesEnabled,
       arkadeFeaturesEnabled,
       soundEffectsEnabled,
+      streamQuality,
       sidebarActions,
       sidebarGroupOrder,
       customActions,
@@ -214,6 +232,7 @@ export function SettingsModal({
     edgeFeaturesEnabled,
     arkadeFeaturesEnabled,
     soundEffectsEnabled,
+    streamQuality,
     sidebarActions,
     sidebarGroupOrder,
     customActions,
@@ -273,6 +292,7 @@ export function SettingsModal({
         edgeFeaturesEnabled,
         arkadeFeaturesEnabled,
         soundEffectsEnabled,
+        streamQuality,
         sidebarActions,
         sidebarGroupOrder,
         customAdbActions: customActions,
@@ -428,7 +448,7 @@ export function SettingsModal({
           <div className="settings-sections">
             <section className="settings-section">
               <h4>General</h4>
-              <p className="picker-empty">Workspace feedback and where captures are saved.</p>
+              <p className="picker-empty">Workspace feedback, stream quality, and where captures are saved.</p>
               <label className="modal-field">
                 <span className="modal-field__label">Capture path</span>
                 <input
@@ -442,6 +462,32 @@ export function SettingsModal({
               <p className="settings-hint">
                 Screenshots and screen recordings. Screenshots are also copied to the system clipboard
                 when <code>wl-copy</code> or <code>xclip</code> is available.
+              </p>
+              <p className="modal-field__label" style={{ marginTop: "0.85rem" }}>
+                Stream quality
+              </p>
+              <div className="settings-quality" role="radiogroup" aria-label="Stream quality">
+                {STREAM_QUALITY_OPTIONS.map((option) => {
+                  const selected = streamQuality === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`settings-quality__option${selected ? " is-selected" : ""}`}
+                      disabled={saving || !ready}
+                      onClick={() => setStreamQuality(option.id)}
+                    >
+                      <span className="settings-quality__name">{option.label}</span>
+                      <span className="settings-quality__hint">{option.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="settings-hint">
+                Applies to new Android mirrors. Re-add a device (or refresh its stream) to use the
+                new quality.
               </p>
               <ToggleList>
                 <ToggleSwitch

@@ -38,6 +38,32 @@ SIDEBAR_ACTION_DEFS: list[dict[str, str]] = [
 
 CUSTOM_ADB_GROUP = "Custom ADB"
 
+# Android mirror quality presets (scrcpy max_size / max_fps / video_bit_rate).
+# max_size 0 = no limit (device native resolution).
+STREAM_QUALITY_PRESETS: dict[str, dict[str, int]] = {
+    "low": {"max_size": 480, "max_fps": 15, "bit_rate": 2_000_000},
+    "medium": {"max_size": 720, "max_fps": 30, "bit_rate": 4_000_000},
+    "high": {"max_size": 1080, "max_fps": 60, "bit_rate": 8_000_000},
+    "high_30": {"max_size": 1080, "max_fps": 30, "bit_rate": 6_000_000},
+    "ultra": {"max_size": 0, "max_fps": 60, "bit_rate": 16_000_000},
+}
+STREAM_QUALITY_DEFAULT = "high"
+STREAM_QUALITY_IDS = frozenset(STREAM_QUALITY_PRESETS)
+
+
+def normalize_stream_quality(raw: object) -> str:
+    if isinstance(raw, str):
+        key = raw.strip().lower()
+        if key in STREAM_QUALITY_IDS:
+            return key
+    return STREAM_QUALITY_DEFAULT
+
+
+def stream_quality_params(quality: object | None = None) -> dict[str, int]:
+    key = normalize_stream_quality(quality if quality is not None else load_settings().get("streamQuality"))
+    return dict(STREAM_QUALITY_PRESETS[key])
+
+
 SIDEBAR_GROUP_ORDER_DEFAULT: list[str] = [
     "Launch",
     "Stop",
@@ -97,6 +123,7 @@ def _defaults() -> dict:
         "edgeFeaturesEnabled": True,
         "arkadeFeaturesEnabled": True,
         "soundEffectsEnabled": True,
+        "streamQuality": STREAM_QUALITY_DEFAULT,
         "sidebarActions": _default_sidebar_flags(),
         "sidebarGroupOrder": list(SIDEBAR_GROUP_ORDER_DEFAULT),
         "customAdbActions": [],
@@ -118,6 +145,7 @@ def _normalize(data: dict) -> dict:
         base["arkadeFeaturesEnabled"] = bool(data["arkadeFeaturesEnabled"])
     if "soundEffectsEnabled" in data:
         base["soundEffectsEnabled"] = bool(data["soundEffectsEnabled"])
+    base["streamQuality"] = normalize_stream_quality(data.get("streamQuality"))
 
     flags = _default_sidebar_flags()
     raw_flags = data.get("sidebarActions")
@@ -168,6 +196,8 @@ def save_settings(patch: dict) -> dict:
         merged["arkadeFeaturesEnabled"] = bool(patch["arkadeFeaturesEnabled"])
     if "soundEffectsEnabled" in patch:
         merged["soundEffectsEnabled"] = bool(patch["soundEffectsEnabled"])
+    if "streamQuality" in patch:
+        merged["streamQuality"] = normalize_stream_quality(patch["streamQuality"])
     if "sidebarActions" in patch and isinstance(patch["sidebarActions"], dict):
         merged["sidebarActions"] = {
             **merged.get("sidebarActions", {}),

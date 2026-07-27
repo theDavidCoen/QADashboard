@@ -27,6 +27,7 @@ export interface SettingsPayload {
   edgeFeaturesEnabled: boolean;
   arkadeFeaturesEnabled: boolean;
   soundEffectsEnabled: boolean;
+  streamQuality: StreamQuality;
   sidebarActions: Record<string, boolean>;
   sidebarGroupOrder: string[];
   sidebarActionDefs: SidebarActionDef[];
@@ -40,6 +41,20 @@ export interface SettingsPayload {
     hasPin?: boolean;
   }>;
 }
+
+export type StreamQuality = "low" | "medium" | "high" | "high_30" | "ultra";
+
+export const STREAM_QUALITY_OPTIONS: Array<{
+  id: StreamQuality;
+  label: string;
+  hint: string;
+}> = [
+  { id: "low", label: "Low", hint: "480p · 15 fps — lightest on CPU/USB" },
+  { id: "medium", label: "Medium", hint: "720p · 30 fps" },
+  { id: "high_30", label: "High 30", hint: "1080p · 30 fps" },
+  { id: "high", label: "High", hint: "1080p · 60 fps (default)" },
+  { id: "ultra", label: "Ultra", hint: "Native resolution · 60 fps" },
+];
 
 function formatApiDetail(detail: unknown, status: number): string {
   if (typeof detail === "string" && detail.trim()) return detail;
@@ -63,6 +78,7 @@ export async function saveSettings(patch: {
   edgeFeaturesEnabled?: boolean;
   arkadeFeaturesEnabled?: boolean;
   soundEffectsEnabled?: boolean;
+  streamQuality?: StreamQuality;
   sidebarActions?: Record<string, boolean>;
   sidebarGroupOrder?: string[];
   customAdbActions?: CustomAdbAction[];

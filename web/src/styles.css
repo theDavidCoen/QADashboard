@@ -2079,6 +2079,56 @@ body {
   color: var(--muted);
 }
 
+.settings-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
+}
+
+.settings-quality__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+}
+
+.settings-quality__option:hover:not(:disabled),
+.settings-quality__option:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent, #38bdf8) 55%, var(--border));
+  outline: none;
+}
+
+.settings-quality__option.is-selected {
+  border-color: color-mix(in srgb, var(--accent, #38bdf8) 70%, var(--border));
+  background: color-mix(in srgb, var(--accent, #38bdf8) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #38bdf8) 35%, transparent);
+}
+
+.settings-quality__option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.settings-quality__name {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+
+.settings-quality__hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .settings-section--shortcuts {
   margin-top: 0.35rem;
   padding-top: 0.85rem;

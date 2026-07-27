@@ -130,6 +130,15 @@ class ScrcpyStream:
         max_size = int(self._cfg.get("max_size", 1080))
         max_fps = int(self._cfg.get("max_fps", 60))
         bit_rate = int(self._cfg.get("bit_rate", 16_000_000))
+        try:
+            from .settings_store import stream_quality_params
+
+            quality = stream_quality_params()
+            max_size = int(quality["max_size"])
+            max_fps = int(quality["max_fps"])
+            bit_rate = int(quality["bit_rate"])
+        except Exception:
+            pass
         server_args = " ".join(
             part
             for part in [
