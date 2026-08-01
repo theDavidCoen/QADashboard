@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stream freeze on paste** — long LN invoices no longer use `adb input text` (which stalled the device UI/encoder). Paste uses scrcpy `SET_CLIPBOARD` + `PASTE` again, with adb only as fallback; clipboard broadcast to other devices is non-blocking.
+
 ## [0.3.1] — 2026-08-01
 
 ### Fixed
