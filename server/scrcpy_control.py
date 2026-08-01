@@ -121,6 +121,29 @@ def inject_text(text: str) -> bytes:
     return bytes(buf)
 
 
+def inject_text_chunks(text: str, *, max_bytes: int = 300) -> list[bytes]:
+    """Split text into scrcpy INJECT_TEXT payloads (UTF-8 safe)."""
+    if not text:
+        return []
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return [inject_text(text)]
+    chunks: list[bytes] = []
+    current = ""
+    current_bytes = 0
+    for char in text:
+        size = len(char.encode("utf-8"))
+        if current and current_bytes + size > max_bytes:
+            chunks.append(inject_text(current))
+            current = ""
+            current_bytes = 0
+        current += char
+        current_bytes += size
+    if current:
+        chunks.append(inject_text(current))
+    return chunks
+
+
 def back_or_screen_on(action: int = 0) -> bytes:
     return bytes([TYPE_BACK_OR_SCREEN_ON, action])
 

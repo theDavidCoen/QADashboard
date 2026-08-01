@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-01
+
+### Fixed
+
+- **Device-to-device clipboard paste** — server keeps per-device clipboard memory and, on copy, pushes the text onto other mirrored devices’ clipboards (so the Xiaomi IME chip is not stuck on stale local text). Paste types via `adb input text` (MIUI Notes WebView) and also updates the target clipboard before typing.
+
 ## [0.3.0] — 2026-07-27
 
 ### Added

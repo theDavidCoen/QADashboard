@@ -30,6 +30,11 @@ def get_active_stream(serial: str) -> "ScrcpyStream | None":
         return _active_streams.get(serial)
 
 
+def iter_active_streams() -> list["ScrcpyStream"]:
+    with _active_streams_lock:
+        return list(_active_streams.values())
+
+
 def _detect_scrcpy_version() -> str | None:
     try:
         result = subprocess.run(

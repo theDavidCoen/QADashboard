@@ -530,6 +530,75 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                 data = json.loads(text)
             except json.JSONDecodeError:
                 continue
+
+            # Paste: resolve text (client / other-device / wl-paste), then type via adb
+            # (MIUI Notes WebView ignores scrcpy INJECT_TEXT; KEYCODE_PASTE uses stale clip).
+            if data.get("type") == "paste_from_host":
+                from .adb_paste import paste_text_via_adb
+                from .host_clipboard import resolve_paste_text
+                from .scrcpy_control import inject_text_chunks
+
+                client_text = str(data.get("text") or "")
+                payload_text, source = await loop.run_in_executor(
+                    None,
+                    lambda: resolve_paste_text(
+                        client_text=client_text, target_serial=stream.serial
+                    ),
+                )
+                if not payload_text:
+                    try:
+                        await websocket.send_json(
+                            {"type": "paste_result", "ok": False, "error": "empty clipboard"}
+                        )
+                    except Exception:
+                        pass
+                    continue
+
+                # Update the target device clipboard so the IME suggestion chip /
+                # long-press Paste match what we insert (not the stale local clip).
+                from .host_clipboard import note_clipboard_push
+                from .scrcpy_control import set_clipboard
+
+                note_clipboard_push(stream.serial, payload_text)
+                await loop.run_in_executor(
+                    None, stream.send_control, set_clipboard(payload_text, paste=False)
+                )
+
+                adb_ok, adb_detail = await loop.run_in_executor(
+                    None, paste_text_via_adb, stream.serial, payload_text
+                )
+                method = "adb"
+                ok = adb_ok
+                if not adb_ok:
+                    method = "scrcpy_inject"
+                    chunks = inject_text_chunks(payload_text)
+                    ok = True
+                    for chunk in chunks:
+                        if not await loop.run_in_executor(None, stream.send_control, chunk):
+                            ok = False
+                            break
+                    adb_detail = f"adb failed ({adb_detail}); used scrcpy inject"
+
+                try:
+                    await websocket.send_json(
+                        {
+                            "type": "paste_result",
+                            "ok": ok,
+                            "length": len(payload_text),
+                            "preview": payload_text[:64],
+                            "source": source,
+                            "method": method,
+                            "detail": adb_detail,
+                        }
+                    )
+                except Exception:
+                    pass
+                continue
+
+            # Track explicit Ctrl+C/X so the matching clipboard reply updates host clip.
+            if data.get("type") == "clipboard_get":
+                setattr(stream, "_expect_clipboard", True)
+
             payload = from_client_message(data)
             if payload:
                 await loop.run_in_executor(None, stream.send_control, payload)
@@ -539,11 +608,62 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
             msg = await loop.run_in_executor(None, stream.recv_device_message)
             if msg is None:
                 break
-            if msg.get("type") in {"clipboard", "clipboard_ack"}:
+            if msg.get("type") == "clipboard" and isinstance(msg.get("text"), str):
+                from .host_clipboard import (
+                    has_device_clipboard,
+                    device_own_clipboard,
+                    note_clipboard_push,
+                    remember_device_clipboard,
+                    was_clipboard_push_echo,
+                    write_host_clipboard_text,
+                )
+                from .scrcpy_control import set_clipboard
+                from .scrcpy_stream import iter_active_streams
+
+                text = msg["text"]
+                explicit = bool(getattr(stream, "_expect_clipboard", False))
+                if explicit:
+                    setattr(stream, "_expect_clipboard", False)
+
+                # Echo of a clipboard we just pushed — don't rebroadcast (loop).
+                if was_clipboard_push_echo(stream.serial, text):
+                    remember_device_clipboard(stream.serial, text)
+                    try:
+                        await websocket.send_json(msg)
+                    except Exception:
+                        break
+                    continue
+
+                seen = has_device_clipboard(stream.serial)
+                prev = device_own_clipboard(stream.serial)
+                remember_device_clipboard(stream.serial, text)
+
+                if explicit:
+                    await loop.run_in_executor(None, write_host_clipboard_text, text)
+
+                # Broadcast to other mirrored devices so their IME clipboard chip
+                # updates on copy (long-press or Ctrl+C), not only on paste.
+                should_broadcast = explicit or (seen and text != prev)
+                if should_broadcast and text:
+                    for other in iter_active_streams():
+                        if other.serial == stream.serial:
+                            continue
+                        note_clipboard_push(other.serial, text)
+                        await loop.run_in_executor(
+                            None, other.send_control, set_clipboard(text, paste=False)
+                        )
+
                 try:
                     await websocket.send_json(msg)
                 except Exception:
                     break
+                continue
+            if msg.get("type") == "clipboard_ack":
+                try:
+                    await websocket.send_json(msg)
+                except Exception:
+                    break
+                continue
 
     video_task = asyncio.create_task(pump_video())
     control_in_task = asyncio.create_task(pump_control_in())

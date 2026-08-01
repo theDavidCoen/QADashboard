@@ -32,6 +32,102 @@ let keyboardTargetId: string | null = null;
 type TextInjector = (text: string) => void;
 const textInjectors = new Map<string, TextInjector>();
 
+/**
+ * Synchronous host clipboard mirror — only from intentional copies (Ctrl+C/X).
+ * Idle devices must not push their local clipboard into the browser/system clipboard.
+ */
+let hostClipboardMirror = "";
+let hostClipboardMirrorAt = 0;
+
+/** Last clipboard text reported by each device (for change detection). */
+const deviceClipboards = new Map<string, string>();
+
+/** Device ids with an in-flight Ctrl+C/X clipboard_get. */
+const pendingClipboardGets = new Set<string>();
+
+/** Ignore unsolicited clipboard from a device briefly after it becomes the keyboard target. */
+const deviceClipboardMuteUntil = new Map<string, number>();
+
+/** Correlate Ctrl/⌘+V keydown with the following paste event to avoid double-send. */
+let pasteGestureId = 0;
+let handledPasteGestureId = 0;
+
+function rememberHostClipboard(text: string): void {
+  if (!text) return;
+  hostClipboardMirror = text;
+  hostClipboardMirrorAt = Date.now();
+}
+
+/**
+ * Apply a device→host clipboard message.
+ * Unsolicited updates from a newly-armed device are muted so focusing Xiaomi to paste
+ * cannot overwrite the PC clipboard with that phone's stale local clip.
+ */
+function ingestDeviceClipboard(deviceId: string, text: string): void {
+  const prev = deviceClipboards.get(deviceId);
+  const seen = deviceClipboards.has(deviceId);
+  deviceClipboards.set(deviceId, text);
+
+  if (pendingClipboardGets.delete(deviceId)) {
+    rememberHostClipboard(text);
+    void navigator.clipboard.writeText(text).catch(() => {
+      /* ignore */
+    });
+    return;
+  }
+
+  // First observation while idle: track only (do not clobber host).
+  if (!seen) {
+    return;
+  }
+
+  if (Date.now() < (deviceClipboardMuteUntil.get(deviceId) ?? 0)) {
+    return;
+  }
+
+  // Long-press Copy on the armed device.
+  if (keyboardTargetId === deviceId && text !== prev) {
+    rememberHostClipboard(text);
+    void navigator.clipboard.writeText(text).catch(() => {
+      /* ignore */
+    });
+  }
+}
+
+async function resolvePasteText(clipboardData?: DataTransfer | null): Promise<string> {
+  const fromEvent = clipboardData?.getData("text/plain") ?? "";
+  if (fromEvent) {
+    rememberHostClipboard(fromEvent);
+    return fromEvent;
+  }
+
+  try {
+    const fromApi = await navigator.clipboard.readText();
+    if (fromApi) {
+      rememberHostClipboard(fromApi);
+      return fromApi;
+    }
+  } catch {
+    /* permission denied or unsupported */
+  }
+
+  const mirrorAgeMs = Date.now() - hostClipboardMirrorAt;
+  if (hostClipboardMirror && mirrorAgeMs < 120_000) {
+    return hostClipboardMirror;
+  }
+  return "";
+}
+
+type ControlSender = (msg: Record<string, unknown>) => void;
+
+/**
+ * Ask the server to paste the OS clipboard (wl-paste) into the device via INJECT_TEXT.
+ * Optional client text is only a fallback if the server cannot read the host clipboard.
+ */
+function pasteTextToAndroid(sendControl: ControlSender, text = ""): void {
+  sendControl({ type: "paste_from_host", text });
+}
+
 export function getKeyboardTargetId(): string | null {
   return keyboardTargetId;
 }
@@ -57,6 +153,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 function armKeyboard(deviceId: string, stream: HTMLElement, statusEl: HTMLElement | null) {
   keyboardTargetId = deviceId;
+  // Mute unsolicited clipboard sync briefly — focusing a device often re-emits its
+  // local clipboard and would otherwise overwrite the PC clipboard before paste.
+  deviceClipboardMuteUntil.set(deviceId, Date.now() + 1500);
   stream.classList.add("is-keyboard-hot");
   // Focus after the current pointer event so preventDefault cannot cancel it.
   window.requestAnimationFrame(() => {
@@ -282,20 +381,23 @@ export function DeviceStream({
       if (mod && !event.altKey) {
         const key = event.key.toLowerCase();
         if (key === "v") {
-          event.preventDefault();
-          void (async () => {
-            try {
-              const text = await navigator.clipboard.readText();
-              if (!text) return;
-              sendControl({ type: "clipboard_set", text, paste: true });
-            } catch {
-              /* clipboard permission denied */
-            }
-          })();
+          // Prefer the paste event (clipboardData). Fallback reads OS clipboard on the server.
+          const gesture = ++pasteGestureId;
+          window.setTimeout(() => {
+            if (handledPasteGestureId >= gesture) return;
+            if (keyboardTargetId !== deviceId) return;
+            void (async () => {
+              const text = await resolvePasteText(null);
+              handledPasteGestureId = gesture;
+              pasteTextToAndroid(sendControl, text);
+              setStatus("Pasting from host clipboard…");
+            })();
+          }, 0);
           return;
         }
         if (key === "c" || key === "x") {
           event.preventDefault();
+          pendingClipboardGets.add(deviceId);
           sendControl({ type: "clipboard_get", copyKey: key === "x" ? "cut" : "copy" });
           return;
         }
@@ -341,10 +443,13 @@ export function DeviceStream({
     const onPaste = (event: ClipboardEvent) => {
       if (keyboardTargetId !== deviceId) return;
       if (isEditableTarget(event.target)) return;
+      if (event.defaultPrevented) return;
       const text = event.clipboardData?.getData("text/plain") ?? "";
-      if (!text) return;
       event.preventDefault();
-      sendControl({ type: "clipboard_set", text, paste: true });
+      handledPasteGestureId = pasteGestureId;
+      if (text) rememberHostClipboard(text);
+      pasteTextToAndroid(sendControl, text);
+      setStatus("Pasting from host clipboard…");
     };
 
     const socket = new WebSocket(wsUrl(deviceId));
@@ -363,11 +468,24 @@ export function DeviceStream({
             error?: string;
             type?: string;
             text?: string;
+            ok?: boolean;
+            preview?: string;
+            length?: number;
+            source?: string;
+            method?: string;
           };
           if (payload.type === "clipboard" && typeof payload.text === "string") {
-            void navigator.clipboard.writeText(payload.text).catch(() => {
-              /* ignore */
-            });
+            ingestDeviceClipboard(deviceId, payload.text);
+            return;
+          }
+          if (payload.type === "paste_result") {
+            if (payload.ok) {
+              const preview = payload.preview ?? "";
+              const short = preview.length > 40 ? `${preview.slice(0, 40)}…` : preview;
+              setStatus(`Pasted ${payload.length ?? "?"} chars via ${payload.method ?? "?"}: ${short}`);
+            } else {
+              setStatus(payload.error ? `Paste failed: ${payload.error}` : "Paste failed");
+            }
             return;
           }
           if (payload.error) setStatus(payload.error);
@@ -418,7 +536,7 @@ export function DeviceStream({
     stream.addEventListener("pointerenter", onPointerEnter);
     stream.addEventListener("pointerleave", onPointerLeave);
     stream.addEventListener("blur", onBlur);
-    stream.addEventListener("paste", onPaste);
+    // Single window-capture listener avoids double clipboard_set (stream + window).
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("paste", onPaste, true);
     textInjectors.set(deviceId, (text) => sendControl({ type: "text", text }));
@@ -434,7 +552,6 @@ export function DeviceStream({
       stream.removeEventListener("pointerenter", onPointerEnter);
       stream.removeEventListener("pointerleave", onPointerLeave);
       stream.removeEventListener("blur", onBlur);
-      stream.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("paste", onPaste, true);
       stream.classList.remove("is-keyboard-hot");
@@ -536,15 +653,17 @@ export function DeviceStream({
 
       const mod = event.ctrlKey || event.metaKey;
       if (mod && !event.altKey && event.key.toLowerCase() === "v") {
-        event.preventDefault();
-        void (async () => {
-          try {
-            const text = await navigator.clipboard.readText();
-            if (text) sendControl({ type: "text", text });
-          } catch {
-            /* ignore */
-          }
-        })();
+        const gesture = ++pasteGestureId;
+        window.setTimeout(() => {
+          if (handledPasteGestureId >= gesture) return;
+          if (keyboardTargetId !== deviceId) return;
+          void (async () => {
+            const text = await resolvePasteText(null);
+            if (!text) return;
+            handledPasteGestureId = gesture;
+            sendControl({ type: "text", text });
+          })();
+        }, 0);
         return;
       }
 
@@ -581,9 +700,12 @@ export function DeviceStream({
     const onPaste = (event: ClipboardEvent) => {
       if (keyboardTargetId !== deviceId) return;
       if (isEditableTarget(event.target)) return;
+      if (event.defaultPrevented) return;
       const text = event.clipboardData?.getData("text/plain") ?? "";
       if (!text) return;
       event.preventDefault();
+      handledPasteGestureId = pasteGestureId;
+      rememberHostClipboard(text);
       sendControl({ type: "text", text });
     };
 
@@ -660,7 +782,6 @@ export function DeviceStream({
     stream.addEventListener("pointerenter", onPointerEnter);
     stream.addEventListener("pointerleave", onPointerLeave);
     stream.addEventListener("blur", onBlur);
-    stream.addEventListener("paste", onPaste);
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("paste", onPaste, true);
     textInjectors.set(deviceId, (text) => sendControl({ type: "text", text }));
@@ -676,7 +797,6 @@ export function DeviceStream({
       stream.removeEventListener("pointerenter", onPointerEnter);
       stream.removeEventListener("pointerleave", onPointerLeave);
       stream.removeEventListener("blur", onBlur);
-      stream.removeEventListener("paste", onPaste);
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("paste", onPaste, true);
       stream.classList.remove("is-keyboard-hot");
