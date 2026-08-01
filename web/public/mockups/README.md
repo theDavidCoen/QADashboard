@@ -43,6 +43,7 @@ Percentages of the frame image (0–100). Measure the transparent/screen rectang
 |----|--------|--------------|
 | `iphone-8` | iPhone 8 | [WithFrame](https://withfra.me/shot/iphone-8) (Space Gray PNG) |
 | `xiaomi-13t-pro` | Xiaomi 13T Pro | [Figma Xiaomi 13 mockup](https://www.figma.com/design/MJD2ryqOdeC9rkBHE3SsbC/Xiaomi-13-mockup--Community-?node-id=102-8) (front frame PNG) |
+| `samsung-galaxy-s26` | Samsung Galaxy S26 | Product render cutout (transparent screen + punch-hole); proportions cross-checked with [Figma S26 Ultra front](https://www.figma.com/design/Xn4jXDmOZyMFIA3haMsSDz/Samsung-Galaxy-S26-Ultra-Mockup--Community-?node-id=1-50) |
 | `redmi-note-9-pro` | Redmi Note 9 Pro | Custom SVG |
 
 Fallbacks: `generic-android`, `generic-ios`

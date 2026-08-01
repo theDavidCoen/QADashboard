@@ -18,6 +18,23 @@
       "screenRadius": "6.8%",
       "match": ["23078PND5G", "corot", "Xiaomi 13T Pro", "13T Pro", "2210132C"]
     },
+    "samsung-galaxy-s26": {
+      "label": "Samsung Galaxy S26",
+      "frame": "/mockups/samsung-galaxy-s26/frame.png",
+      "frameType": "image",
+      "frameAspect": 0.4839,
+      "screen": { "left": 2.47, "top": 1.43, "width": 94.32, "height": 97.13 },
+      "screenRadius": "8.5%",
+      "match": [
+        "SM-S942B",
+        "SM_S942B",
+        "m1s",
+        "m1sxeea",
+        "Galaxy S26",
+        "Samsung Galaxy S26"
+      ]
+    },
+
     "redmi-note-9-pro": {
       "label": "Redmi Note 9 Pro",
       "frame": "/mockups/redmi-note-9-pro/frame.svg",

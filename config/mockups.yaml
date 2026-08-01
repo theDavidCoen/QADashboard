@@ -15,6 +15,14 @@ mockups:
       - corot
       - Xiaomi 13T Pro
       - 13T Pro
+  samsung-galaxy-s26:
+    match:
+      - SM-S942B
+      - SM_S942B
+      - m1s
+      - m1sxeea
+      - Galaxy S26
+      - Samsung Galaxy S26
   redmi-note-9-pro:
     match:
       - Redmi Note 9 Pro

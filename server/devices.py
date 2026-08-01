@@ -81,15 +81,16 @@ def _adb_prop(serial: str, key: str, timeout: float = 1.2) -> str:
 
 
 def _looks_like_model_code(value: str) -> bool:
-    """True for OEM codes like 23078PND5G rather than marketing names."""
+    """True for OEM codes like 23078PND5G / SM-S942B rather than marketing names."""
     text = value.strip()
     if len(text) < 4:
         return True
     if " " in text:
         return False
-    letters = sum(ch.isalpha() for ch in text)
-    digits = sum(ch.isdigit() for ch in text)
-    return digits >= 3 and letters >= 2 and text.upper() == text.replace("_", "").replace("-", "")
+    normalized = text.replace("_", "").replace("-", "")
+    letters = sum(ch.isalpha() for ch in normalized)
+    digits = sum(ch.isdigit() for ch in normalized)
+    return digits >= 3 and letters >= 2 and normalized.upper() == normalized
 
 
 def _android_identity(serial: str, name_hint: str) -> tuple[str, str, str, str | None]:
@@ -126,10 +127,12 @@ def _android_identity(serial: str, name_hint: str) -> tuple[str, str, str, str |
         pass
 
     mockup_id = resolve_mockup_id("android", name, model)
-    # If mockup maps to xiaomi-13t-pro, use a friendly display name
-    if mockup_id == "xiaomi-13t-pro" and _looks_like_model_code(name):
+    # Prefer mockup label when identity is still an OEM code
+    if mockup_id == "xiaomi-13t-pro" and (_looks_like_model_code(name) or _looks_like_model_code(model)):
         name = "Xiaomi 13T Pro"
-    elif mockup_id == "redmi-note-9-pro" and _looks_like_model_code(name):
+    elif mockup_id == "samsung-galaxy-s26" and (_looks_like_model_code(name) or _looks_like_model_code(model)):
+        name = "Samsung Galaxy S26"
+    elif mockup_id == "redmi-note-9-pro" and (_looks_like_model_code(name) or _looks_like_model_code(model)):
         name = "Redmi Note 9 Pro"
 
     _identity_cache[serial] = (now, name, model, mockup_id, os_version)
