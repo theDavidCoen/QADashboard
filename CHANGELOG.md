@@ -7,8 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-08-03
+
 ### Fixed
 
+- **Device copy → PC clipboard** — on-device Copy now writes the host clipboard via `wl-copy`/`xclip` (not only Ctrl/⌘+C). A short post-connect grace window still ignores the stale device clip so reconnects do not clobber the PC clipboard.
 - **Stream freeze on paste** — long LN invoices no longer use `adb input text` (which stalled the device UI/encoder). Paste uses scrcpy `SET_CLIPBOARD` + `PASTE` again, with adb only as fallback; clipboard broadcast to other devices is non-blocking.
 
 ## [0.3.1] — 2026-08-01

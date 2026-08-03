@@ -227,7 +227,7 @@ def main() -> int:
     # which blanks the UI (theme script + ThemeToggle throw on boot).
     # Bump the storage folder when the UI changes so WebKitGTK does not keep a
     # stale index.html from a previous build (common on desktop).
-    storage = Path.home() / ".local" / "share" / "qa-dashboard" / "webview-v5"
+    storage = Path.home() / ".local" / "share" / "qa-dashboard" / "webview-v6"
     storage.mkdir(parents=True, exist_ok=True)
 
     try:

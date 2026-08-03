@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -511,6 +512,9 @@ async def action_custom_adb(body: CustomAdbRunBody) -> dict:
 
 async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
     await stream.start()
+    # Clipboard in the first moments is often a stale sync on connect — don't
+    # push those to the PC / peers. Later changes (and Ctrl+C) do sync.
+    setattr(stream, "_clipboard_started_at", time.monotonic())
     await websocket.send_bytes(await stream.config_message())
     loop = asyncio.get_running_loop()
 
@@ -609,7 +613,6 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                 break
             if msg.get("type") == "clipboard" and isinstance(msg.get("text"), str):
                 from .host_clipboard import (
-                    has_device_clipboard,
                     device_own_clipboard,
                     note_clipboard_push,
                     remember_device_clipboard,
@@ -633,17 +636,19 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                         break
                     continue
 
-                seen = has_device_clipboard(stream.serial)
                 prev = device_own_clipboard(stream.serial)
                 remember_device_clipboard(stream.serial, text)
 
-                if explicit:
+                # Real copy → PC clipboard + peer devices. Skip only the brief
+                # post-connect window (stale device clip), unless Ctrl/⌘+C/X.
+                started = float(getattr(stream, "_clipboard_started_at", 0.0) or 0.0)
+                within_grace = started > 0 and (time.monotonic() - started) < 2.0
+                should_sync = bool(text) and (
+                    explicit or (not within_grace and text != prev)
+                )
+                if should_sync:
                     # Fire-and-forget — don't stall the control reader on wl-copy.
                     loop.run_in_executor(None, write_host_clipboard_text, text)
-
-                # Broadcast to other devices so their IME clipboard chip updates on copy.
-                should_broadcast = explicit or (seen and text != prev)
-                if should_broadcast and text:
 
                     def _push_to(other_stream: ScrcpyStream, payload: str) -> None:
                         note_clipboard_push(other_stream.serial, payload)

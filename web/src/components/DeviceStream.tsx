@@ -85,8 +85,9 @@ function ingestDeviceClipboard(deviceId: string, text: string): void {
     return;
   }
 
-  // Long-press Copy on the armed device.
-  if (keyboardTargetId === deviceId && text !== prev) {
+  // On-device Copy that changed the clip — mirror into the browser/OS clipboard.
+  // (Server also wl-copy's on the same change so other desktop apps see it.)
+  if (text !== prev) {
     rememberHostClipboard(text);
     void navigator.clipboard.writeText(text).catch(() => {
       /* ignore */
