@@ -62,6 +62,7 @@ import {
 } from "./components/DeviceStream";
 import { playFocusModeSound, playRecSound, playShutterSound, setSoundEffectsEnabled } from "./feedback";
 import type { DeviceInfo, SlotDevice } from "./types";
+import { EasterEggGame } from "./components/EasterEggGame";
 import { APP_LICENSE_URL, APP_REPO_URL, APP_VERSION } from "./version";
 
 function makeSlot(device: DeviceInfo): SlotDevice {
@@ -161,6 +162,8 @@ export default function App() {
     "Device",
     "Custom ADB",
   ]);
+  const [eggOpen, setEggOpen] = useState(false);
+  const eggClicksRef = useRef({ count: 0, lastAt: 0 });
   const [collapsedSidebarGroups, setCollapsedSidebarGroups] = useState<Record<string, boolean>>(
     loadCollapsedSidebarGroups,
   );
@@ -1062,7 +1065,22 @@ export default function App() {
       <aside className="app-sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-row">
-            <h1 className="site-title">QA Dashboard</h1>
+            <h1
+              className="site-title"
+              onClick={() => {
+                const now = Date.now();
+                const egg = eggClicksRef.current;
+                if (now - egg.lastAt > 1600) egg.count = 0;
+                egg.lastAt = now;
+                egg.count += 1;
+                if (egg.count >= 5) {
+                  egg.count = 0;
+                  setEggOpen(true);
+                }
+              }}
+            >
+              QA Dashboard
+            </h1>
             <ThemeToggle />
           </div>
           <p className="tagline">Manual testing · multi-device · scrcpy</p>
@@ -1614,6 +1632,8 @@ export default function App() {
           onSaved={(payload) => applySettings(payload)}
         />
       ) : null}
+
+      {eggOpen ? <EasterEggGame onClose={() => setEggOpen(false)} /> : null}
 
       {modal === "pwa" ? (
         <OpenUrlModal
