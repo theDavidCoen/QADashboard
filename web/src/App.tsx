@@ -54,6 +54,7 @@ import { OpenUrlModal } from "./components/OpenUrlModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { StartOtherAppModal } from "./components/StartOtherAppModal";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { applyAppearance, loadAppearance } from "./appearance";
 import { VideoRecordModal } from "./components/VideoRecordModal";
 import {
   getKeyboardTargetId,
@@ -226,6 +227,10 @@ export default function App() {
     if (payload.capturePath) setCapturePathHint(payload.capturePath);
     setFeaturesReady(true);
   };
+
+  useEffect(() => {
+    applyAppearance(loadAppearance());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

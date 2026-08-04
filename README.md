@@ -1,8 +1,8 @@
 # QA Dashboard
 
-Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/Genymobile/scrcpy)) and iOS ([libimobiledevice](https://libimobiledevice.org/)). Local UI with light/dark theme (same visual language as [davidcoen.it](https://davidcoen.it)).
+Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/Genymobile/scrcpy)) and iOS ([libimobiledevice](https://libimobiledevice.org/)). Local UI with light/dark theme, plus Appearance presets (Default, Liquid Glass, Custom backgrounds) in Settings.
 
-**Version:** 0.4.0
+**Version:** 0.5.0
 
 ## Requirements
 

@@ -12,6 +12,17 @@ import {
   type StreamQuality,
   STREAM_QUALITY_OPTIONS,
 } from "../api/settings";
+import {
+  applyAppearance,
+  CUSTOM_COLOR_SWATCHES,
+  LIQUID_WALLPAPER,
+  loadAppearance,
+  saveAppearance,
+  type AppearanceId,
+  type AppearanceState,
+  type BgKind,
+  type LiquidBgKind,
+} from "../appearance";
 import { useDialogModal } from "../hooks/useDialogModal";
 
 interface SettingsModalProps {
@@ -120,6 +131,8 @@ export function SettingsModal({
   const [edgeFeaturesEnabled, setEdgeFeaturesEnabled] = useState(edgeInit);
   const [arkadeFeaturesEnabled, setArkadeFeaturesEnabled] = useState(arkadeInit);
   const [soundEffectsEnabled, setSoundEffectsEnabled] = useState(soundInit);
+  const [appearance, setAppearance] = useState<AppearanceState>(() => loadAppearance());
+  const [imageError, setImageError] = useState<string | null>(null);
   const [streamQuality, setStreamQuality] = useState<StreamQuality>("high");
   const [sidebarActions, setSidebarActions] = useState<Record<string, boolean>>({});
   const [sidebarGroupOrder, setSidebarGroupOrder] = useState<string[]>([]);
@@ -141,6 +154,64 @@ export function SettingsModal({
   const [newMaster, setNewMaster] = useState("");
   const [confirmMaster, setConfirmMaster] = useState("");
   const [unlockPassword, setUnlockPassword] = useState("");
+
+  const updateAppearance = (patch: Partial<AppearanceState>) => {
+    setAppearance((prev) => {
+      const next = { ...prev, ...patch };
+      saveAppearance(next);
+      applyAppearance(next);
+      return next;
+    });
+  };
+
+  const onPickAppearance = (id: AppearanceId) => {
+    updateAppearance({ id });
+    setImageError(null);
+  };
+
+  const onPickBgKind = (bgKind: BgKind) => {
+    updateAppearance({ id: "custom", bgKind });
+  };
+
+  const onPickBgColor = (bgColor: string) => {
+    if (appearance.id === "liquid") {
+      updateAppearance({ id: "liquid", liquidBgKind: "color", bgColor });
+    } else {
+      updateAppearance({ id: "custom", bgKind: "color", bgColor });
+    }
+  };
+
+  const onPickLiquidBgKind = (liquidBgKind: LiquidBgKind) => {
+    updateAppearance({ id: "liquid", liquidBgKind });
+  };
+
+  const onPickBgImage = (file: File | null, forLiquid: boolean) => {
+    setImageError(null);
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setImageError("Choose an image file (PNG, JPEG, WebP…).");
+      return;
+    }
+    if (file.size > 2.5 * 1024 * 1024) {
+      setImageError("Image is too large (max ~2.5 MB for local storage).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const bgImage = typeof reader.result === "string" ? reader.result : null;
+      if (!bgImage) {
+        setImageError("Could not read the image.");
+        return;
+      }
+      if (forLiquid) {
+        updateAppearance({ id: "liquid", liquidBgKind: "image", bgImage });
+      } else {
+        updateAppearance({ id: "custom", bgKind: "image", bgImage });
+      }
+    };
+    reader.onerror = () => setImageError("Could not read the image.");
+    reader.readAsDataURL(file);
+  };
 
   const rememberBaseline = (
     nextCapture: string,
@@ -498,6 +569,234 @@ export function SettingsModal({
                 />
               </ToggleList>
               <p className="settings-hint">Focus Mode, Rec, and screenshot sounds.</p>
+            </section>
+
+            <section className="settings-section">
+              <h4>Appearance</h4>
+              <p className="picker-empty">
+                Workspace look. Default keeps the classic chrome; Liquid is translucent glass (uses
+                the sidebar light / dark toggle); Custom sets only the background.
+              </p>
+              <div className="settings-appearance">
+                <div className="settings-appearance__options" role="radiogroup" aria-label="Theme">
+                  {(
+                    [
+                      {
+                        id: "default" as const,
+                        name: "Default",
+                        hint: "Classic light / dark surfaces",
+                      },
+                      {
+                        id: "liquid" as const,
+                        name: "Liquid",
+                        hint: "Glass chrome; pick wallpaper, color, or image",
+                      },
+                      {
+                        id: "custom" as const,
+                        name: "Custom",
+                        hint: "Your color or image as background",
+                      },
+                    ] as const
+                  ).map((option) => {
+                    const selected = appearance.id === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        className={`settings-appearance__option${selected ? " is-selected" : ""}`}
+                        onClick={() => onPickAppearance(option.id)}
+                      >
+                        <span className="settings-appearance__name">{option.name}</span>
+                        <span className="settings-appearance__hint">{option.hint}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {appearance.id === "liquid" ? (
+                  <div className="settings-appearance__custom">
+                    <p className="settings-hint" style={{ marginBottom: "0.45rem" }}>
+                      Glass materials follow{" "}
+                      <a
+                        href="https://developer.apple.com/documentation/technologyoverviews/liquid-glass"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Liquid Glass
+                      </a>
+                      . Light / dark is controlled from the sidebar toggle.
+                    </p>
+                    <div
+                      className="settings-appearance__kind"
+                      role="group"
+                      aria-label="Liquid background"
+                    >
+                      <button
+                        type="button"
+                        className={appearance.liquidBgKind === "wallpaper" ? "is-selected" : ""}
+                        onClick={() => onPickLiquidBgKind("wallpaper")}
+                      >
+                        Wallpaper
+                      </button>
+                      <button
+                        type="button"
+                        className={appearance.liquidBgKind === "color" ? "is-selected" : ""}
+                        onClick={() => onPickLiquidBgKind("color")}
+                      >
+                        Color
+                      </button>
+                      <button
+                        type="button"
+                        className={appearance.liquidBgKind === "image" ? "is-selected" : ""}
+                        onClick={() => onPickLiquidBgKind("image")}
+                      >
+                        Image
+                      </button>
+                    </div>
+
+                    {appearance.liquidBgKind === "wallpaper" ? (
+                      <div
+                        className="settings-appearance__preview"
+                        style={{ backgroundImage: `url(${LIQUID_WALLPAPER})` }}
+                        aria-label="Bundled Liquid wallpaper preview"
+                      />
+                    ) : null}
+
+                    {appearance.liquidBgKind === "color" ? (
+                      <>
+                        <p className="modal-field__label">Color map</p>
+                        <div className="settings-color-map" role="listbox" aria-label="Background colors">
+                          {CUSTOM_COLOR_SWATCHES.map((hex) => (
+                            <button
+                              key={hex}
+                              type="button"
+                              role="option"
+                              aria-selected={appearance.bgColor === hex}
+                              aria-label={hex}
+                              className={`settings-color-swatch${
+                                appearance.bgColor === hex ? " is-selected" : ""
+                              }`}
+                              style={{ background: hex }}
+                              onClick={() => onPickBgColor(hex)}
+                            />
+                          ))}
+                        </div>
+                        <div className="settings-color-row">
+                          <input
+                            type="color"
+                            value={appearance.bgColor}
+                            aria-label="Background color"
+                            onChange={(event) => onPickBgColor(event.target.value)}
+                          />
+                          <code>{appearance.bgColor}</code>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {appearance.liquidBgKind === "image" ? (
+                      <>
+                        <label className="modal-field">
+                          <span className="modal-field__label">Background image</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) =>
+                              onPickBgImage(event.target.files?.[0] ?? null, true)
+                            }
+                          />
+                        </label>
+                        {appearance.bgImage ? (
+                          <div
+                            className="settings-appearance__preview"
+                            style={{ backgroundImage: `url(${appearance.bgImage})` }}
+                            aria-label="Background preview"
+                          />
+                        ) : (
+                          <p className="settings-hint">No image selected yet.</p>
+                        )}
+                        {imageError ? <p className="settings-error">{imageError}</p> : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {appearance.id === "custom" ? (
+                  <div className="settings-appearance__custom">
+                    <div className="settings-appearance__kind" role="group" aria-label="Background type">
+                      <button
+                        type="button"
+                        className={appearance.bgKind === "color" ? "is-selected" : ""}
+                        onClick={() => onPickBgKind("color")}
+                      >
+                        Color
+                      </button>
+                      <button
+                        type="button"
+                        className={appearance.bgKind === "image" ? "is-selected" : ""}
+                        onClick={() => onPickBgKind("image")}
+                      >
+                        Image
+                      </button>
+                    </div>
+
+                    {appearance.bgKind === "color" ? (
+                      <>
+                        <p className="modal-field__label">Color map</p>
+                        <div className="settings-color-map" role="listbox" aria-label="Background colors">
+                          {CUSTOM_COLOR_SWATCHES.map((hex) => (
+                            <button
+                              key={hex}
+                              type="button"
+                              role="option"
+                              aria-selected={appearance.bgColor === hex}
+                              aria-label={hex}
+                              className={`settings-color-swatch${
+                                appearance.bgColor === hex ? " is-selected" : ""
+                              }`}
+                              style={{ background: hex }}
+                              onClick={() => onPickBgColor(hex)}
+                            />
+                          ))}
+                        </div>
+                        <div className="settings-color-row">
+                          <input
+                            type="color"
+                            value={appearance.bgColor}
+                            aria-label="Custom color"
+                            onChange={(event) => onPickBgColor(event.target.value)}
+                          />
+                          <code>{appearance.bgColor}</code>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <label className="modal-field">
+                          <span className="modal-field__label">Background image</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) =>
+                              onPickBgImage(event.target.files?.[0] ?? null, false)
+                            }
+                          />
+                        </label>
+                        {appearance.bgImage ? (
+                          <div
+                            className="settings-appearance__preview"
+                            style={{ backgroundImage: `url(${appearance.bgImage})` }}
+                            aria-label="Background preview"
+                          />
+                        ) : (
+                          <p className="settings-hint">No image selected yet.</p>
+                        )}
+                        {imageError ? <p className="settings-error">{imageError}</p> : null}
+                      </>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </section>
 
             <section className="settings-section">

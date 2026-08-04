@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-04
+
+### Added
+
+- **Appearance themes** — Settings → Appearance: **Default**, **Liquid** (glass chrome), and **Custom** (background only). Preference persisted in `localStorage` (`qa_dashboard_appearance_v2`).
+- **Liquid backgrounds** — bundled wallpaper, solid color map, or custom image; Liquid glass follows the sidebar light / dark toggle.
+- **Custom backgrounds** — color swatches + file picker (data URL, local only).
+
+### Changed
+
+- Liquid surfaces use theme tokens so light and dark stay readable over wallpapers and solid colors.
+
 ## [0.4.0] — 2026-08-04
 
 ### Added
