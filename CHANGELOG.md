@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-08-04
+
+### Fixed
+
+- **Focus / REC ring** — outline follows the phone bezel again (was sized to the rotate wrapper including the Live footer) and is no longer clipped by Liquid slot `overflow: hidden`.
+
 ## [0.5.0] — 2026-08-04
 
 ### Added

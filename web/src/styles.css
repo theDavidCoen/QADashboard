@@ -1349,36 +1349,34 @@ body {
   z-index: 2;
 }
 
-/* Ring drawn on a pseudo-layer so layout/size of the phone never shifts */
-.device-slot--recording .device-slot__rotate::after {
+/* Ring on the phone bezel only — not .device-slot__rotate (that also wraps the Live footer). */
+.device-slot--recording .phone-mockup__inner::after,
+.device-slot--focused .phone-mockup__inner::after {
   content: "";
   position: absolute;
   inset: 0;
-  border-radius: 1.35rem;
+  border-radius: 1.85rem;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.device-slot--recording .phone-mockup__inner::after {
   box-shadow:
     0 0 0 2px color-mix(in srgb, #ef4444 85%, transparent),
     0 0 0 6px color-mix(in srgb, #ef4444 28%, transparent),
     0 0 24px color-mix(in srgb, #ef4444 35%, transparent);
   animation: recording-ring 1.4s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 3;
 }
 
-.device-slot--focused .device-slot__rotate::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 1.35rem;
+.device-slot--focused .phone-mockup__inner::after {
   box-shadow:
     0 0 0 2px color-mix(in srgb, #00d4ff 90%, transparent),
     0 0 0 6px color-mix(in srgb, #00d4ff 28%, transparent),
     0 0 28px color-mix(in srgb, #00d4ff 40%, transparent);
   animation: focus-ring 1.4s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 3;
 }
 
-.device-slot--focused.device-slot--recording .device-slot__rotate::after {
+.device-slot--focused.device-slot--recording .phone-mockup__inner::after {
   box-shadow:
     0 0 0 2px color-mix(in srgb, #00d4ff 90%, transparent),
     0 0 0 6px color-mix(in srgb, #ef4444 35%, transparent),
@@ -1389,7 +1387,7 @@ body {
   position: absolute;
   top: 0.65rem;
   right: 0.75rem;
-  z-index: 4;
+  z-index: 6;
   padding: 0.2rem 0.45rem;
   border-radius: 0.35rem;
   background: rgba(220, 38, 38, 0.92);
@@ -2627,7 +2625,6 @@ html[data-appearance="liquid"] .workspace,
 html[data-appearance="liquid"] .app-sidebar .sidebar-brand,
 html[data-appearance="liquid"] .sidebar-status,
 html[data-appearance="liquid"] .sidebar-actions,
-html[data-appearance="liquid"] .device-slot:not(.device-slot--empty),
 html[data-appearance="liquid"] .status-pill,
 html[data-appearance="liquid"] .theme-toggle,
 html[data-appearance="liquid"] .workspace-rec-toggle,
@@ -2758,9 +2755,14 @@ html[data-appearance="liquid"] .sidebar-actions {
   padding: 0.75rem 0.85rem;
 }
 
-html[data-appearance="liquid"] .device-slot:not(.device-slot--empty) {
-  border-radius: calc(var(--radius) + 0.25rem);
-  overflow: hidden;
+/* Do not glass-clip active device slots — overflow:hidden chopped the focus/REC ring. */
+html[data-appearance="liquid"] .device-slot--active {
+  overflow: visible;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 html[data-appearance="liquid"] .action-btn,

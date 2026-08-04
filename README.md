@@ -2,7 +2,7 @@
 
 Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/Genymobile/scrcpy)) and iOS ([libimobiledevice](https://libimobiledevice.org/)). Local UI with light/dark theme, plus Appearance presets (Default, Liquid Glass, Custom backgrounds) in Settings.
 
-**Version:** 0.5.0
+**Version:** 0.5.1
 
 ## Requirements
 
