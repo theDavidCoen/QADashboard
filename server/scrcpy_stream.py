@@ -154,6 +154,8 @@ class ScrcpyStream:
                 f"max_size={max_size}",
                 f"max_fps={max_fps}",
                 f"video_bit_rate={bit_rate}",
+                # Realtime MediaCodec priority (0) reduces encoder buffering on device.
+                "video_codec_options=priority=0",
                 "log_level=info",
                 "tunnel_forward=true" if self._tunnel_forward else "",
             ]
@@ -177,6 +179,7 @@ class ScrcpyStream:
                 self._video_sock.connect(("127.0.0.1", self._local_port))
                 self._recv_exact(self._video_sock, 1)
                 self._video_sock.settimeout(None)
+                self._video_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
                 self._control_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self._control_sock.settimeout(12)
@@ -189,6 +192,7 @@ class ScrcpyStream:
             else:
                 self._video_sock, _ = self._listen_sock.accept()
                 self._video_sock.settimeout(None)
+                self._video_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self._control_sock, _ = self._listen_sock.accept()
                 self._control_sock.settimeout(None)
                 self._control_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)

@@ -213,6 +213,9 @@ export function DeviceStream({
     let closed = false;
     let decoder: VideoDecoder | null = null;
     let configured = false;
+    /** After dropping late deltas, wait for a keyframe so the decoder stays consistent. */
+    let awaitKeyAfterDrop = false;
+    let canvasCtx: CanvasRenderingContext2D | null = null;
 
     const setStatus = (text: string) => {
       status.textContent = text;
@@ -228,6 +231,18 @@ export function DeviceStream({
       }
       decoder = null;
       configured = false;
+      awaitKeyAfterDrop = false;
+      canvasCtx = null;
+    };
+
+    const ensureCanvasCtx = () => {
+      if (!canvasCtx) {
+        // desynchronized: hint the browser to skip compositing sync (lower display latency).
+        canvasCtx =
+          canvas.getContext("2d", { desynchronized: true, alpha: false }) ??
+          canvas.getContext("2d");
+      }
+      return canvasCtx;
     };
 
     const ensureDecoder = (width: number, height: number) => {
@@ -243,6 +258,7 @@ export function DeviceStream({
       videoSizeRef.current = { width, height };
       canvas.width = width;
       canvas.height = height;
+      canvasCtx = null;
       decoder = new VideoDecoder({
         output(frame) {
           const fw = frame.displayWidth || frame.codedWidth;
@@ -251,8 +267,9 @@ export function DeviceStream({
             canvas.width = fw;
             canvas.height = fh;
             videoSizeRef.current = { width: fw, height: fh };
+            canvasCtx = null;
           }
-          const ctx = canvas.getContext("2d");
+          const ctx = ensureCanvasCtx();
           if (ctx) {
             ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
           }
@@ -281,8 +298,11 @@ export function DeviceStream({
           codedWidth: canvas.width || 1080,
           codedHeight: canvas.height || 1920,
           description: buildAvcDescription(sps, pps),
+          optimizeForLatency: true,
+          hardwareAcceleration: "prefer-hardware",
         });
         configured = true;
+        awaitKeyAfterDrop = false;
       } catch (err) {
         configured = false;
         setStatus(`Decoder: ${err instanceof Error ? err.message : "configure failed"}`);
@@ -321,6 +341,15 @@ export function DeviceStream({
 
     const decodeVideoPacket = (payload: Uint8Array, isKey: boolean) => {
       if (!decoder || !configured) return;
+      // Bound decoder backlog: under CPU/USB load, queued frames become visible lag.
+      // Drop deltas until the next keyframe instead of letting latency grow unboundedly.
+      if (decoder.decodeQueueSize > 2) {
+        awaitKeyAfterDrop = true;
+      }
+      if (awaitKeyAfterDrop) {
+        if (!isKey) return;
+        awaitKeyAfterDrop = false;
+      }
       const chunk = new EncodedVideoChunk({
         type: isKey ? "key" : "delta",
         timestamp: performance.now() * 1000,

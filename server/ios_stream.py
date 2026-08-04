@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from .config import load_config
@@ -85,6 +86,7 @@ class IosStream:
     async def stream_packets(self):
         interval = 1.0 / max(self.fps, 1.0)
         sent_config = False
+        next_at = time.monotonic()
         with tempfile.TemporaryDirectory(prefix="qa-ios-") as tmp:
             shot_path = Path(tmp) / "screen.jpg"
             while not self._closed:
@@ -100,7 +102,14 @@ class IosStream:
                                 yield config
                                 sent_config = True
                     yield bytes([MSG_JPEG]) + data
-                await asyncio.sleep(interval)
+                # Pace from capture start, not capture+sleep — avoids compounding lag
+                # when screenshot already took most of the interval.
+                next_at += interval
+                delay = next_at - time.monotonic()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                else:
+                    next_at = time.monotonic()
 
     def _capture(self, path: Path) -> bytes | None:
         if self._closed:

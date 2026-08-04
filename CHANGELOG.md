@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-08-04
+
+### Fixed
+
+- **Stream display lag** — Android WebCodecs decoder uses `optimizeForLatency` / hardware decode and drops late delta frames until the next keyframe so backlog no longer grows into visible delay; video TCP sockets enable `TCP_NODELAY` and scrcpy requests realtime MediaCodec priority; iOS screenshot pacing no longer adds a full sleep after a slow capture.
+
 ## [0.3.2] — 2026-08-03
 
 ### Fixed
