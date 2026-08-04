@@ -9,6 +9,16 @@ mockups:
       - iPhone 8
       - iPhone8,1
       - iPhone8,2
+  iphone-15-pro:
+    match:
+      - iPhone16,1
+      - iPhone16,2
+      - iPhone15,4
+      - iPhone15,5
+      - iPhone 15 Pro Max
+      - iPhone 15 Pro
+      - iPhone 15 Plus
+      - iPhone 15
   xiaomi-13t-pro:
     match:
       - 23078PND5G

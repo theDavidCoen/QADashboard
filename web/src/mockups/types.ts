@@ -12,6 +12,8 @@ export interface MockupProfile {
   frameAspect: number;
   screen: MockupScreen;
   screenRadius: string;
+  /** Optional alpha mask (white = show stream) sized to the screen box for pixel-perfect bezel fit. */
+  screenMask?: string;
   match: string[];
 }
 

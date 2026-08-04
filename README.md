@@ -2,7 +2,7 @@
 
 Multi-device manual testing dashboard for Android ([scrcpy](https://github.com/Genymobile/scrcpy)) and iOS ([libimobiledevice](https://libimobiledevice.org/)). Local UI with light/dark theme (same visual language as [davidcoen.it](https://davidcoen.it)).
 
-**Version:** 0.3.3
+**Version:** 0.4.0
 
 ## Requirements
 

@@ -1196,6 +1196,16 @@ body {
   transform: translateZ(0);
 }
 
+/* WebKitGTK sometimes paints absolute children past the parent's border-radius;
+   overflow:hidden on the stream subtree is enough — do NOT inherit radius onto
+   the JPEG/canvas (a single large % made a ghost oval behind the Dynamic Island). */
+.phone-mockup__screen .device-stream,
+.phone-mockup__screen .device-stream__video,
+.phone-mockup__screen .stream-canvas,
+.phone-mockup__screen .stream-image {
+  overflow: hidden;
+}
+
 .phone-mockup__frame {
   position: relative;
   display: block;

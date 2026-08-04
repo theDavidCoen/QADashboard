@@ -604,7 +604,13 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
 
             payload = from_client_message(data)
             if payload:
-                await loop.run_in_executor(None, stream.send_control, payload)
+                # Touch/scroll/key are high-frequency — never queue them on the
+                # default executor or trackpad wheel floods and "sticks".
+                msg_type = data.get("type")
+                if msg_type in ("touch", "scroll", "key", "text", "back", "display_power"):
+                    stream.send_control(payload)
+                else:
+                    await loop.run_in_executor(None, stream.send_control, payload)
 
     async def pump_device_out() -> None:
         while True:
@@ -687,7 +693,10 @@ async def _relay_ios(websocket: WebSocket, stream: IosStream) -> None:
 
     async def pump_video() -> None:
         async for packet in stream.stream_packets():
-            await websocket.send_bytes(packet)
+            if isinstance(packet, dict):
+                await websocket.send_json(packet)
+            else:
+                await websocket.send_bytes(packet)
 
     async def pump_control() -> None:
         while True:

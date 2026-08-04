@@ -102,6 +102,32 @@ def inject_touch_event(
     return bytes(buf)
 
 
+def inject_scroll_event(
+    x: int,
+    y: int,
+    screen_width: int,
+    screen_height: int,
+    *,
+    hscroll: float = 0.0,
+    vscroll: float = 0.0,
+    buttons: int = 0,
+) -> bytes:
+    """scrcpy INJECT_SCROLL_EVENT (21 bytes). hscroll/vscroll in [-16, 16]."""
+    buf = bytearray(21)
+    buf[0] = TYPE_INJECT_SCROLL_EVENT
+    struct.pack_into(">I", buf, 1, max(0, x))
+    struct.pack_into(">I", buf, 5, max(0, y))
+    struct.pack_into(">H", buf, 9, screen_width)
+    struct.pack_into(">H", buf, 11, screen_height)
+    # Scrcpy normalizes [-16, 16] → [-1, 1] then encodes as i16 fixed-point.
+    h_norm = max(-1.0, min(1.0, float(hscroll) / 16.0))
+    v_norm = max(-1.0, min(1.0, float(vscroll) / 16.0))
+    struct.pack_into(">h", buf, 13, _float_to_i16fp(h_norm))
+    struct.pack_into(">h", buf, 15, _float_to_i16fp(v_norm))
+    struct.pack_into(">I", buf, 17, int(buttons) & 0xFFFFFFFF)
+    return bytes(buf)
+
+
 def inject_keycode(action: int, keycode: int, repeat: int = 0, metastate: int = 0) -> bytes:
     buf = bytearray(14)
     buf[0] = TYPE_INJECT_KEYCODE
@@ -158,6 +184,17 @@ def _float_to_u16(value: float) -> int:
     return int(clamped * 0xFFFF)
 
 
+def _float_to_i16fp(value: float) -> int:
+    """Match scrcpy sc_float_to_i16fp: float in [-1, 1] → signed 16-bit fixed-point."""
+    clamped = max(-1.0, min(1.0, value))
+    i = int(clamped * 0x8000)  # 2^15
+    if i >= 0x7FFF:
+        return 0x7FFF
+    if i < -0x8000:
+        return -0x8000
+    return i
+
+
 def from_client_message(data: dict) -> bytes | None:
     msg_type = data.get("type")
     if msg_type == "touch":
@@ -169,6 +206,16 @@ def from_client_message(data: dict) -> bytes | None:
             int(data["height"]),
             pressure=float(data.get("pressure", 1.0)),
             buttons=int(data.get("buttons", BUTTON_PRIMARY)),
+        )
+    if msg_type == "scroll":
+        return inject_scroll_event(
+            int(data["x"]),
+            int(data["y"]),
+            int(data["width"]),
+            int(data["height"]),
+            hscroll=float(data.get("hscroll", 0.0)),
+            vscroll=float(data.get("vscroll", 0.0)),
+            buttons=int(data.get("buttons", 0)),
         )
     if msg_type == "key":
         return inject_keycode(int(data["action"]), int(data["keycode"]))

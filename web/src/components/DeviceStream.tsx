@@ -362,6 +362,13 @@ export function DeviceStream({
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
+      // Trackpads often synthesize a click at the end of a two-finger scroll.
+      if (performance.now() < wheelSuppressClicksUntil) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      endWheelScroll();
       armKeyboard(deviceId, stream, status);
       stream.setPointerCapture(event.pointerId);
       draggingRef.current = true;
@@ -376,6 +383,10 @@ export function DeviceStream({
     };
 
     const onPointerUp = (event: PointerEvent) => {
+      if (performance.now() < wheelSuppressClicksUntil && !draggingRef.current) {
+        event.preventDefault();
+        return;
+      }
       if (!draggingRef.current) return;
       draggingRef.current = false;
       sendTouch(ACTION_UP, event.clientX, event.clientY, 0);
@@ -395,6 +406,204 @@ export function DeviceStream({
       if (draggingRef.current || stream.hasPointerCapture(event.pointerId)) return;
       if (document.activeElement === stream) return;
       disarmKeyboard(deviceId, stream, status);
+    };
+
+    // Trackpad / mouse wheel → touch-drag, but only after clearing Android touch-slop
+    // so a tiny two-finger nudge never becomes a tap.
+    const WHEEL_SLOP_PX = 28;
+    const WHEEL_CLICK_SUPPRESS_MS = 400;
+    type WheelScroll = {
+      x: number;
+      y: number;
+      downX: number;
+      downY: number;
+      width: number;
+      height: number;
+      dragged: number;
+    };
+    let wheelScroll: WheelScroll | null = null;
+    let wheelScrollTimer: number | null = null;
+    let wheelAccX = 0;
+    let wheelAccY = 0;
+    let wheelPendingX = 0; // device-px accumulated before DOWN
+    let wheelPendingY = 0;
+    let wheelRaf = 0;
+    let wheelPointerX = 0;
+    let wheelPointerY = 0;
+    let wheelSuppressClicksUntil = 0;
+
+    const endWheelScroll = () => {
+      if (wheelScrollTimer != null) {
+        window.clearTimeout(wheelScrollTimer);
+        wheelScrollTimer = null;
+      }
+      if (wheelRaf) {
+        window.cancelAnimationFrame(wheelRaf);
+        wheelRaf = 0;
+      }
+      wheelAccX = 0;
+      wheelAccY = 0;
+      wheelPendingX = 0;
+      wheelPendingY = 0;
+      if (!wheelScroll) return;
+      const { x, y, width, height, dragged } = wheelScroll;
+      wheelScroll = null;
+      // If we somehow UP without enough travel, nudge first so Android won't tap.
+      if (dragged < WHEEL_SLOP_PX) {
+        const ny = Math.max(0, Math.min(height, y + (y > height / 2 ? -WHEEL_SLOP_PX : WHEEL_SLOP_PX)));
+        sendControl({ type: "touch", action: ACTION_MOVE, pressure: 1, x, y: ny, width, height });
+        sendControl({ type: "touch", action: ACTION_UP, pressure: 0, x, y: ny, width, height });
+      } else {
+        sendControl({ type: "touch", action: ACTION_UP, pressure: 0, x, y, width, height });
+      }
+      wheelSuppressClicksUntil = performance.now() + WHEEL_CLICK_SUPPRESS_MS;
+    };
+
+    const flushWheelScroll = () => {
+      wheelRaf = 0;
+      const { width, height } = videoSizeRef.current;
+      if (width <= 0 || height <= 0) {
+        wheelAccX = 0;
+        wheelAccY = 0;
+        return;
+      }
+
+      const moveX = Math.trunc(wheelAccX);
+      const moveY = Math.trunc(wheelAccY);
+      wheelAccX -= moveX;
+      wheelAccY -= moveY;
+      if (moveX === 0 && moveY === 0) return;
+
+      wheelSuppressClicksUntil = performance.now() + WHEEL_CLICK_SUPPRESS_MS;
+
+      if (!wheelScroll) {
+        wheelPendingX += moveX;
+        wheelPendingY += moveY;
+        const pendingDist = Math.hypot(wheelPendingX, wheelPendingY);
+        if (pendingDist < WHEEL_SLOP_PX) return;
+
+        const start = mapPoint(wheelPointerX, wheelPointerY);
+        const x = start.x;
+        const y = Math.max(Math.floor(height * 0.2), Math.min(Math.floor(height * 0.8), start.y));
+        // DOWN then immediately MOVE by the buffered delta so the first frame
+        // already exceeds touch-slop (never a zero-length tap).
+        sendControl({ type: "touch", action: ACTION_DOWN, pressure: 1, x, y, width, height });
+        let nextX = Math.max(0, Math.min(width, x + wheelPendingX));
+        let nextY = Math.max(0, Math.min(height, y + wheelPendingY));
+        const dragged = Math.hypot(nextX - x, nextY - y);
+        wheelScroll = { x: nextX, y: nextY, downX: x, downY: y, width, height, dragged };
+        wheelPendingX = 0;
+        wheelPendingY = 0;
+        sendControl({
+          type: "touch",
+          action: ACTION_MOVE,
+          pressure: 1,
+          x: nextX,
+          y: nextY,
+          width,
+          height,
+        });
+        return;
+      }
+
+      let nextX = wheelScroll.x + moveX;
+      let nextY = wheelScroll.y + moveY;
+      const hitX = nextX < 0 || nextX > width;
+      const hitY = nextY < 0 || nextY > height;
+      nextX = Math.max(0, Math.min(width, nextX));
+      nextY = Math.max(0, Math.min(height, nextY));
+
+      if (hitX || hitY) {
+        sendControl({
+          type: "touch",
+          action: ACTION_UP,
+          pressure: 0,
+          x: wheelScroll.x,
+          y: wheelScroll.y,
+          width,
+          height,
+        });
+        const reX = hitX ? (moveX < 0 ? Math.floor(width * 0.75) : Math.floor(width * 0.25)) : nextX;
+        const reY = hitY ? (moveY < 0 ? Math.floor(height * 0.75) : Math.floor(height * 0.25)) : nextY;
+        sendControl({ type: "touch", action: ACTION_DOWN, pressure: 1, x: reX, y: reY, width, height });
+        const contX = Math.max(0, Math.min(width, reX + (hitX ? Math.trunc(moveX * 0.35) : 0)));
+        const contY = Math.max(0, Math.min(height, reY + (hitY ? Math.trunc(moveY * 0.35) : 0)));
+        const dragged = Math.hypot(contX - reX, contY - reY);
+        wheelScroll = {
+          x: contX,
+          y: contY,
+          downX: reX,
+          downY: reY,
+          width,
+          height,
+          dragged: Math.max(dragged, WHEEL_SLOP_PX),
+        };
+        if (contX !== reX || contY !== reY) {
+          sendControl({
+            type: "touch",
+            action: ACTION_MOVE,
+            pressure: 1,
+            x: contX,
+            y: contY,
+            width,
+            height,
+          });
+        }
+      } else {
+        const dragged =
+          wheelScroll.dragged + Math.hypot(nextX - wheelScroll.x, nextY - wheelScroll.y);
+        wheelScroll = {
+          ...wheelScroll,
+          x: nextX,
+          y: nextY,
+          dragged,
+        };
+        sendControl({
+          type: "touch",
+          action: ACTION_MOVE,
+          pressure: 1,
+          x: nextX,
+          y: nextY,
+          width,
+          height,
+        });
+      }
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (draggingRef.current) return;
+      if (event.ctrlKey || event.metaKey) return;
+      armKeyboard(deviceId, stream, status);
+
+      const rect = stream.getBoundingClientRect();
+      const { width, height } = videoSizeRef.current;
+      if (width <= 0 || height <= 0) return;
+
+      let dx = event.deltaX;
+      let dy = event.deltaY;
+      if (event.deltaMode === 1) {
+        dx *= 16;
+        dy *= 16;
+      } else if (event.deltaMode === 2) {
+        dx *= rect.width;
+        dy *= rect.height;
+      }
+
+      const sx = width / Math.max(rect.width, 1);
+      const sy = height / Math.max(rect.height, 1);
+      const gain = 1.15;
+      wheelAccX += -dx * sx * gain;
+      wheelAccY += -dy * sy * gain;
+      wheelPointerX = event.clientX;
+      wheelPointerY = event.clientY;
+      wheelSuppressClicksUntil = performance.now() + WHEEL_CLICK_SUPPRESS_MS;
+
+      if (!wheelRaf) {
+        wheelRaf = window.requestAnimationFrame(flushWheelScroll);
+      }
+      if (wheelScrollTimer != null) window.clearTimeout(wheelScrollTimer);
+      wheelScrollTimer = window.setTimeout(endWheelScroll, 280);
+      event.preventDefault();
     };
 
     const onBlur = () => {
@@ -565,6 +774,7 @@ export function DeviceStream({
     stream.addEventListener("pointercancel", onPointerUp);
     stream.addEventListener("pointerenter", onPointerEnter);
     stream.addEventListener("pointerleave", onPointerLeave);
+    stream.addEventListener("wheel", onWheel, { passive: false });
     stream.addEventListener("blur", onBlur);
     // Single window-capture listener avoids double clipboard_set (stream + window).
     window.addEventListener("keydown", onKeyDown, true);
@@ -573,6 +783,7 @@ export function DeviceStream({
 
     return () => {
       closed = true;
+      endWheelScroll();
       if (keyboardTargetId === deviceId) keyboardTargetId = null;
       textInjectors.delete(deviceId);
       stream.removeEventListener("pointerdown", onPointerDown);
@@ -581,6 +792,7 @@ export function DeviceStream({
       stream.removeEventListener("pointercancel", onPointerUp);
       stream.removeEventListener("pointerenter", onPointerEnter);
       stream.removeEventListener("pointerleave", onPointerLeave);
+      stream.removeEventListener("wheel", onWheel);
       stream.removeEventListener("blur", onBlur);
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("paste", onPaste, true);

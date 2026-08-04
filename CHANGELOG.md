@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-04
+
+### Added
+
+- **iPhone 15 mockup** — WithFrame bezel + `screenMask` for Dynamic Island / inner perimeter clip; match rules for iPhone 15 / Pro / Plus / Pro Max.
+- **Screen masks** — optional `screenMask` on mockup profiles (Samsung S26, Xiaomi 13T Pro, iPhone 15) so the stream follows the frame hole instead of a CSS-only radius.
+- **Android trackpad / mouse-wheel scroll** — two-finger and wheel input inject a touch-drag via scrcpy (with touch-slop and post-scroll click suppression so scrolls are not taps).
+- **iOS userspace DVT stream** — on iOS 17+ the mirror uses pymobiledevice3’s in-process RemoteXPC tunnel (no sudo `tunneld`); persistent screenshot session + JPEG frames (Pillow). Requires `pymobiledevice3>=10.3.1`.
+
+### Fixed
+
+- **Mockup corner gaps** — stream clipping aligned to inner bezels (Samsung / Xiaomi / iPhone); elliptical radii preserved where needed so the Dynamic Island is not over-rounded.
+- **High-frequency control lag** — touch / scroll / key messages are sent on the event loop instead of the default executor so wheel input does not stall.
+
 ## [0.3.3] — 2026-08-04
 
 ### Fixed

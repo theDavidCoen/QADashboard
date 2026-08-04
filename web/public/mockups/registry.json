@@ -5,26 +5,79 @@
       "frame": "/mockups/iphone-8/frame.png",
       "frameType": "image",
       "frameAspect": 0.488,
-      "screen": { "left": 7.08, "top": 12.81, "width": 86, "height": 74.66 },
+      "screen": {
+        "left": 7.08,
+        "top": 12.81,
+        "width": 86,
+        "height": 74.66
+      },
       "screenRadius": "0%",
-      "match": ["iPhone10,4", "iPhone 8", "iPhone8,1", "iPhone8,2", "iPhone8,4"]
+      "match": [
+        "iPhone10,4",
+        "iPhone 8",
+        "iPhone8,1",
+        "iPhone8,2",
+        "iPhone8,4"
+      ]
+    },
+    "iphone-15-pro": {
+      "label": "iPhone 15 Pro",
+      "frame": "/mockups/iphone-15-pro/frame.png",
+      "frameType": "image",
+      "frameAspect": 0.4868,
+      "screen": {
+        "left": 4.186,
+        "top": 1.883,
+        "width": 91.783,
+        "height": 96.535
+      },
+      "screenRadius": "15.5% / 7.15%",
+      "screenMask": "/mockups/iphone-15-pro/screen-mask.png",
+      "match": [
+        "iPhone16,1",
+        "iPhone16,2",
+        "iPhone15,4",
+        "iPhone15,5",
+        "iPhone 15 Pro Max",
+        "iPhone 15 Pro",
+        "iPhone 15 Plus",
+        "iPhone 15"
+      ]
     },
     "xiaomi-13t-pro": {
       "label": "Xiaomi 13T Pro",
       "frame": "/mockups/xiaomi-13t-pro/frame.png",
       "frameType": "image",
       "frameAspect": 0.4657,
-      "screen": { "left": 2.5, "top": 1.3, "width": 95.0, "height": 97.4 },
-      "screenRadius": "6.8%",
-      "match": ["23078PND5G", "corot", "Xiaomi 13T Pro", "13T Pro", "2210132C"]
+      "screen": {
+        "left": 2.206,
+        "top": 1.016,
+        "width": 95.587,
+        "height": 98.037
+      },
+      "screenRadius": "8.19% / 3.72%",
+      "match": [
+        "23078PND5G",
+        "corot",
+        "Xiaomi 13T Pro",
+        "13T Pro",
+        "2210132C"
+      ],
+      "screenMask": "/mockups/xiaomi-13t-pro/screen-mask.png"
     },
     "samsung-galaxy-s26": {
       "label": "Samsung Galaxy S26",
       "frame": "/mockups/samsung-galaxy-s26/frame.png",
       "frameType": "image",
       "frameAspect": 0.4839,
-      "screen": { "left": 2.47, "top": 1.43, "width": 94.32, "height": 97.13 },
-      "screenRadius": "8.5%",
+      "screen": {
+        "left": 2.349,
+        "top": 1.314,
+        "width": 94.561,
+        "height": 97.373
+      },
+      "screenRadius": "8.90% / 4.18%",
+      "screenMask": "/mockups/samsung-galaxy-s26/screen-mask.png",
       "match": [
         "SM-S942B",
         "SM_S942B",
@@ -34,13 +87,17 @@
         "Samsung Galaxy S26"
       ]
     },
-
     "redmi-note-9-pro": {
       "label": "Redmi Note 9 Pro",
       "frame": "/mockups/redmi-note-9-pro/frame.svg",
       "frameType": "svg",
       "frameAspect": 0.46,
-      "screen": { "left": 5.75, "top": 3.45, "width": 88.5, "height": 93.22 },
+      "screen": {
+        "left": 5.75,
+        "top": 3.45,
+        "width": 88.5,
+        "height": 93.22
+      },
       "screenRadius": "6.8%",
       "match": [
         "Redmi Note 9 Pro",
@@ -55,7 +112,12 @@
       "frame": "/mockups/generic-android/frame.svg",
       "frameType": "svg",
       "frameAspect": 0.46,
-      "screen": { "left": 5.5, "top": 3, "width": 89, "height": 94 },
+      "screen": {
+        "left": 5.5,
+        "top": 3,
+        "width": 89,
+        "height": 94
+      },
       "screenRadius": "6%",
       "match": []
     },
@@ -64,7 +126,12 @@
       "frame": "/mockups/generic-ios/frame.svg",
       "frameType": "svg",
       "frameAspect": 0.488,
-      "screen": { "left": 4.5, "top": 9.8, "width": 91, "height": 79.3 },
+      "screen": {
+        "left": 4.5,
+        "top": 9.8,
+        "width": 91,
+        "height": 79.3
+      },
       "screenRadius": "0%",
       "match": []
     }
