@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-05
+
+### Fixed
+
+- **Sidebar layout** — top of the QA Dashboard card and bottom of the footer (settings + version links) align with the workspace rectangle; sidebar and workspace now share the same column height via flex stretch.
+
 ## [0.6.0] — 2026-08-04
 
 ### Added

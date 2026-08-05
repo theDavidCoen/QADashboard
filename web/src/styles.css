@@ -98,8 +98,8 @@ body {
 }
 
 .app {
-  display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  display: flex;
+  align-items: stretch;
   gap: 1rem;
   height: 100vh;
   padding: 0.85rem 1rem 0.85rem 0.85rem;
@@ -108,15 +108,18 @@ body {
 }
 
 .app-sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
-  padding: 0.85rem 0.35rem 0.85rem 0.65rem;
+  padding: 0 0.35rem 0 0.65rem;
   min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar-actions {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
@@ -127,12 +130,12 @@ body {
 }
 
 .sidebar-footer {
-  margin-top: auto;
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 0.65rem;
-  padding: 0.15rem 0.25rem 0;
+  padding: 0 0.25rem 0;
 }
 
 .sidebar-credit {
@@ -210,6 +213,7 @@ body {
 }
 
 .sidebar-brand {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -240,6 +244,7 @@ body {
 }
 
 .sidebar-status {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -461,6 +466,8 @@ body {
 
 .workspace {
   position: relative;
+  flex: 1 1 0;
+  min-width: 0;
   background: color-mix(in srgb, var(--bg) 55%, #c8ccd4);
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) + 0.15rem);
@@ -468,7 +475,6 @@ body {
   padding: 0.85rem 1rem 1rem;
   overflow: hidden;
   min-height: 0;
-  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -744,10 +750,6 @@ body {
 }
 
 /* Immersive Focus: enlarge + center even if browser Fullscreen API is denied */
-.app:has(.workspace--focus-expanded) {
-  grid-template-columns: 1fr;
-}
-
 .app:has(.workspace--focus-expanded) .app-sidebar {
   display: none;
 }
@@ -937,16 +939,23 @@ body {
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-    height: 100vh;
+    flex-direction: column;
+  }
+
+  .workspace {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .app-sidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: flex-start;
     gap: 0.85rem 1.25rem;
+    overflow: visible;
     padding: 0.25rem 0.15rem;
   }
 
