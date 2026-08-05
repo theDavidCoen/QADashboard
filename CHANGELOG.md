@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-05
+
+### Added
+
+- **Edge appearance** — theme that matches the Edge wallet look (dotted scene background, frosted cards, mint accents on device/app labels, Edge-style toggles).
+- **Easter egg sounds** — Pac-Man–style SFX (pellet chomp, power pellet, eat ghost, death, win/game over) with an in-game mute control; respects the global Sound setting.
+
+### Fixed
+
+- **UI clipping** — settings gear focus ring, easter egg modal bottom, workspace hint, and stream status footer no longer get cut off.
+
 ## [0.6.1] — 2026-08-05
 
 ### Fixed

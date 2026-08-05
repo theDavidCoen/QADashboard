@@ -575,7 +575,8 @@ export function SettingsModal({
               <h4>Appearance</h4>
               <p className="picker-empty">
                 Workspace look. Default keeps the classic chrome; Liquid is translucent glass (uses
-                the sidebar light / dark toggle); Custom sets only the background.
+                the sidebar light / dark toggle); Edge matches the Edge wallet app; Custom sets only
+                the background.
               </p>
               <div className="settings-appearance">
                 <div className="settings-appearance__options" role="radiogroup" aria-label="Theme">
@@ -590,6 +591,11 @@ export function SettingsModal({
                         id: "liquid" as const,
                         name: "Liquid",
                         hint: "Glass chrome; pick wallpaper, color, or image",
+                      },
+                      {
+                        id: "edge" as const,
+                        name: "Edge",
+                        hint: "Edge wallet look; dots background + frosted cards",
                       },
                       {
                         id: "custom" as const,
@@ -614,6 +620,13 @@ export function SettingsModal({
                     );
                   })}
                 </div>
+
+                {appearance.id === "edge" ? (
+                  <p className="settings-hint" style={{ marginTop: "0.45rem" }}>
+                    Matches Edge wallet cards and the dotted scene background. Light / dark follows the
+                    sidebar toggle.
+                  </p>
+                ) : null}
 
                 {appearance.id === "liquid" ? (
                   <div className="settings-appearance__custom">

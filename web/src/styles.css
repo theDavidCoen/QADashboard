@@ -115,7 +115,6 @@ body {
   gap: 1.35rem;
   padding: 0 0.35rem 0 0.65rem;
   min-height: 0;
-  overflow: hidden;
 }
 
 .sidebar-actions {
@@ -135,7 +134,7 @@ body {
   align-items: flex-end;
   justify-content: space-between;
   gap: 0.65rem;
-  padding: 0 0.25rem 0;
+  padding: 0.2rem 0.35rem 0.2rem 0.25rem;
 }
 
 .sidebar-credit {
@@ -190,6 +189,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 2.35rem;
   height: 2.35rem;
   border: 1px solid var(--border);
@@ -205,6 +205,7 @@ body {
   color: var(--fg);
   border-color: var(--border-strong);
   box-shadow: var(--shadow-sm);
+  outline: none;
 }
 
 .sidebar-settings__icon {
@@ -507,10 +508,13 @@ body {
 .workspace-hint {
   margin: auto 0 0 auto;
   padding-top: 0.5rem;
+  padding-bottom: 0.12rem;
   font-size: 0.82rem;
+  line-height: 1.45;
   color: var(--muted);
   text-align: right;
   flex: 0 0 auto;
+  flex-shrink: 0;
   align-self: flex-end;
 }
 
@@ -924,7 +928,7 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 0.45rem 0.3rem 0.55rem;
+  padding: 0.55rem 0.45rem 0.85rem;
 }
 
 .device-strip {
@@ -1365,8 +1369,8 @@ body {
 .device-slot--focused .phone-mockup__inner::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: 1.85rem;
+  inset: -4px;
+  border-radius: 1.95rem;
   pointer-events: none;
   z-index: 5;
 }
@@ -1657,7 +1661,8 @@ body {
   align-items: center;
   gap: 0.35rem;
   width: 100%;
-  padding: 0 0.15rem;
+  flex-shrink: 0;
+  padding: 0 0.15rem 0.12rem;
 }
 
 .stream-status {
@@ -2501,7 +2506,8 @@ body {
 /* —— Appearance themes (Default / Liquid Glass / Custom) —— */
 
 html[data-appearance="liquid"] body,
-html[data-appearance="custom"] body {
+html[data-appearance="custom"] body,
+html[data-appearance="edge"] body {
   background-color: var(--appearance-bg-color, #05060a);
   background-image: var(--appearance-bg-image, none);
   background-size: cover;
@@ -2511,7 +2517,8 @@ html[data-appearance="custom"] body {
 }
 
 html[data-appearance="liquid"] .app,
-html[data-appearance="custom"] .app {
+html[data-appearance="custom"] .app,
+html[data-appearance="edge"] .app {
   background: transparent;
 }
 
@@ -2822,6 +2829,317 @@ html[data-appearance="custom"] .sidebar-actions {
   padding: 0.65rem 0.75rem;
 }
 
+/* Edge — wallet list scene + EdgeCard chrome (edge-react-gui edgeDark / edgeLight). */
+html[data-appearance="edge"]:not([data-theme="light"]) {
+  --bg: #1a1a1a;
+  --fg: #ffffff;
+  --muted: #888888;
+  --link: #00f1a2;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.25);
+  --surface: rgba(255, 255, 255, 0.1);
+  --surface-muted: rgba(255, 255, 255, 0.05);
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --accent: #00f1a2;
+  --live: #77c513;
+  --edge-card-bg: rgba(255, 255, 255, 0.1);
+  --edge-card-radius: 16px;
+  --edge-chip-bg: hsla(0, 0%, 100%, 0.2);
+  --edge-chip-hover: rgba(255, 255, 255, 0.28);
+  --edge-sheet-bg: #333232;
+  --edge-sheet-border: rgba(255, 255, 255, 0.12);
+  --edge-inset: rgba(255, 255, 255, 0.06);
+  --edge-hover: rgba(255, 255, 255, 0.08);
+  --edge-divider: rgba(255, 255, 255, 0.1);
+  --edge-backdrop: rgba(0, 0, 0, 0.65);
+  --edge-primary-bg: linear-gradient(90deg, #20312f 0%, #00604d 100%);
+  --edge-primary-fg: #ffffff;
+  --edge-ghost-bg: rgba(255, 255, 255, 0.08);
+  --edge-ghost-border: rgba(255, 255, 255, 0.2);
+  --edge-toggle-on: #00f1a2;
+  --edge-toggle-off: #888888;
+  --edge-toggle-thumb-on: #ffffff;
+  --edge-toggle-thumb-off: #d7d7d7;
+}
+
+html[data-appearance="edge"][data-theme="light"] {
+  --bg: #f6f6fb;
+  --fg: #06090c;
+  --muted: #888888;
+  --link: #089e73;
+  --border: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --surface: #e3eeef;
+  --surface-muted: #f6f6fb;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --accent: #089e73;
+  --live: #77c513;
+  --edge-card-bg: #e3eeef;
+  --edge-card-radius: 16px;
+  --edge-chip-bg: rgba(255, 255, 255, 0.72);
+  --edge-chip-hover: #ffffff;
+  --edge-sheet-bg: #ffffff;
+  --edge-sheet-border: rgba(0, 0, 0, 0.1);
+  --edge-inset: #f6f6fb;
+  --edge-hover: rgba(0, 0, 0, 0.05);
+  --edge-divider: rgba(0, 0, 0, 0.1);
+  --edge-backdrop: rgba(0, 0, 0, 0.35);
+  --edge-primary-bg: linear-gradient(90deg, #5c9067 0%, #77bb81 100%);
+  --edge-primary-fg: #ffffff;
+  --edge-ghost-bg: rgba(255, 255, 255, 0.55);
+  --edge-ghost-border: rgba(0, 0, 0, 0.12);
+  --edge-toggle-on: #089e73;
+  --edge-toggle-off: #494949;
+  --edge-toggle-thumb-on: #ffffff;
+  --edge-toggle-thumb-off: #d7d7d7;
+}
+
+/* DotsBackground — edgeDark radial accents at 10% opacity. */
+html[data-appearance="edge"]:not([data-theme="light"]) body {
+  background-color: #1a1a1a;
+  background-image:
+    radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.1) 0%, transparent 42%),
+    radial-gradient(circle at 95% 30%, rgba(252, 179, 41, 0.1) 0%, transparent 48%),
+    radial-gradient(ellipse 90% 70% at -15% 100%, rgba(0, 224, 132, 0.1) 0%, transparent 58%);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+html[data-appearance="edge"][data-theme="light"] body {
+  background-color: #f6f6fb;
+  background-image: none;
+}
+
+html[data-appearance="edge"] .workspace,
+html[data-appearance="edge"] .app-sidebar .sidebar-brand,
+html[data-appearance="edge"] .sidebar-status,
+html[data-appearance="edge"] .sidebar-actions {
+  background: var(--edge-card-bg);
+  border: none;
+  border-radius: var(--edge-card-radius);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .app-sidebar {
+  gap: 0.5rem;
+}
+
+html[data-appearance="edge"] .sidebar-brand,
+html[data-appearance="edge"] .sidebar-status,
+html[data-appearance="edge"] .sidebar-actions {
+  padding: 0.65rem 0.75rem;
+}
+
+html[data-appearance="edge"] .workspace {
+  padding: 0.85rem 1rem 1rem;
+}
+
+html[data-appearance="edge"] .device-slot--empty.empty-add {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .empty-body--add {
+  background: var(--edge-card-bg);
+  border: none;
+  border-radius: var(--edge-card-radius);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .device-slot--action:hover .empty-body--add,
+html[data-appearance="edge"] .device-slot--action:focus-visible .empty-body--add {
+  background: color-mix(in srgb, var(--edge-card-bg) 88%, rgba(255, 255, 255, 0.14));
+}
+
+html[data-appearance="edge"] .status-pill,
+html[data-appearance="edge"] .theme-toggle,
+html[data-appearance="edge"] .sidebar-settings {
+  background: var(--edge-chip-bg);
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .sidebar-action {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .sidebar-action:hover:not(:disabled),
+html[data-appearance="edge"] .sidebar-action:focus-visible:not(:disabled) {
+  background: var(--edge-hover);
+  border: none;
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .sidebar-actions__toggle:hover,
+html[data-appearance="edge"] .sidebar-actions__toggle:focus-visible {
+  background: var(--edge-hover);
+}
+
+html[data-appearance="edge"] .workspace-rec-toggle,
+html[data-appearance="edge"] .workspace-shot-toggle,
+html[data-appearance="edge"] .workspace-focus-toggle,
+html[data-appearance="edge"] .workspace-focus-badge,
+html[data-appearance="edge"] .workspace-stop-rec {
+  background: var(--edge-chip-bg);
+  border: none;
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .modal-btn--primary {
+  background: var(--edge-primary-bg);
+  border: none;
+  color: var(--edge-primary-fg);
+}
+
+html[data-appearance="edge"] .modal-btn--primary:hover:not(:disabled),
+html[data-appearance="edge"] .modal-btn--primary:focus-visible:not(:disabled) {
+  filter: brightness(1.06);
+  border: none;
+  color: var(--edge-primary-fg);
+}
+
+html[data-appearance="edge"] .modal-btn--ghost {
+  background: var(--edge-ghost-bg);
+  border: 1px solid var(--edge-ghost-border);
+  color: var(--fg);
+}
+
+html[data-appearance="edge"] .device-picker__panel,
+html[data-appearance="edge"] .settings-modal__panel {
+  background: var(--edge-sheet-bg);
+  border: 1px solid var(--edge-sheet-border);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .device-picker__panel .picker-item,
+html[data-appearance="edge"] .settings-modal__panel .settings-section,
+html[data-appearance="edge"] .settings-modal__panel .settings-appearance__option,
+html[data-appearance="edge"] .settings-modal__panel .settings-quality__option,
+html[data-appearance="edge"] .settings-modal__panel .settings-appearance__custom,
+html[data-appearance="edge"] .settings-modal__panel .modal-input {
+  background: var(--edge-inset);
+  border-color: var(--border);
+}
+
+html[data-appearance="edge"] .device-picker__panel .picker-item:hover,
+html[data-appearance="edge"] .settings-modal__panel .settings-quality__option:hover:not(:disabled),
+html[data-appearance="edge"] .settings-modal__panel .settings-appearance__option:hover,
+html[data-appearance="edge"] .settings-modal__panel .settings-quality__option.is-selected,
+html[data-appearance="edge"] .settings-modal__panel .settings-appearance__option.is-selected {
+  background: var(--edge-hover);
+}
+
+html[data-appearance="edge"] .settings-group-order__btn,
+html[data-appearance="edge"] .action-btn,
+html[data-appearance="edge"] .settings-quality__option,
+html[data-appearance="edge"] .picker-close,
+html[data-appearance="edge"] .modal-input,
+html[data-appearance="edge"] .stream-status {
+  background: var(--edge-chip-bg);
+  border-color: var(--border);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .settings-switch__track {
+  width: 3.2rem;
+  height: 1.85rem;
+  border: none;
+  background: var(--edge-toggle-off);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .settings-switch.is-on .settings-switch__track {
+  background: var(--edge-toggle-on);
+  border: none;
+}
+
+html[data-appearance="edge"] .settings-switch__thumb {
+  top: 0.14rem;
+  left: 0.14rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  background: var(--edge-toggle-thumb-off);
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .settings-switch.is-on .settings-switch__thumb {
+  transform: translateX(1.35rem);
+  background: var(--edge-toggle-thumb-on);
+}
+
+html[data-appearance="edge"] .action-btn:hover:not(:disabled),
+html[data-appearance="edge"] .settings-quality__option:hover:not(:disabled),
+html[data-appearance="edge"] .settings-quality__option.is-selected {
+  background: var(--edge-chip-hover);
+}
+
+html[data-appearance="edge"] .device-picker::backdrop {
+  background: var(--edge-backdrop);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-appearance="edge"] .workspace-head {
+  border-bottom-color: var(--edge-divider);
+}
+
+html[data-appearance="edge"] .device-slot--active {
+  overflow: visible;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+html[data-appearance="edge"] .site-title {
+  color: var(--fg);
+}
+
+html[data-appearance="edge"] .device-slot__label {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+html[data-appearance="edge"] .tagline,
+html[data-appearance="edge"] .workspace-hint,
+html[data-appearance="edge"] .header-note {
+  color: var(--muted);
+}
+
+html[data-appearance="edge"] .sidebar-credit__link {
+  color: var(--muted);
+}
+
+html[data-appearance="edge"] .sidebar-credit__link:hover,
+html[data-appearance="edge"] .sidebar-credit__link:focus-visible {
+  color: var(--accent);
+}
+
+html[data-appearance="edge"] .egg-game__panel {
+  background: #333232;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 /* Settings — appearance picker */
 .settings-appearance {
   display: grid;
@@ -2830,7 +3148,7 @@ html[data-appearance="custom"] .sidebar-actions {
 
 .settings-appearance__options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(6.25rem, 1fr));
   gap: 0.45rem;
 }
 
@@ -2953,14 +3271,60 @@ html[data-appearance="custom"] .sidebar-actions {
 
 .egg-game {
   max-width: min(96vw, 42rem);
+  height: min(94vh, 56rem);
+  max-height: min(94vh, 56rem);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .egg-game__panel {
-  max-height: min(94vh, 56rem);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 100%;
   gap: 0.65rem;
+  overflow: hidden;
   background: #0c0e14;
   color: #f5f5f5;
   border-color: #2a3142;
+}
+
+.egg-game__panel > header {
+  flex-shrink: 0;
+}
+
+.egg-game__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.egg-game__mute {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid #2a3142;
+  border-radius: var(--radius-sm);
+  background: #161b26;
+  color: #a3a3a3;
+  cursor: pointer;
+}
+
+.egg-game__mute:hover {
+  color: #f5f5f5;
+  border-color: #52525b;
+}
+
+.egg-game__mute[aria-pressed="true"] {
+  color: #f87171;
+}
+
+.egg-game__mute-icon {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .egg-game__panel h3 {
@@ -2985,6 +3349,7 @@ html[data-appearance="custom"] .sidebar-actions {
   justify-content: space-between;
   gap: 0.55rem 1rem;
   margin: 0 0 0.15rem;
+  flex-shrink: 0;
   font-size: 0.82rem;
   color: #a3a3a3;
 }
@@ -3029,6 +3394,8 @@ html[data-appearance="custom"] .sidebar-actions {
 .egg-game__stage {
   display: flex;
   justify-content: center;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0.45rem;
   border: 1px solid #2a3142;
   border-radius: var(--radius-sm);
@@ -3045,12 +3412,14 @@ html[data-appearance="custom"] .sidebar-actions {
 
 .egg-game__hint {
   margin: 0;
+  flex-shrink: 0;
   color: #8b929e;
   font-size: 0.78rem;
 }
 
 .egg-game__actions {
   margin-top: 0.15rem;
+  flex-shrink: 0;
 }
 
 .egg-game__panel .modal-btn--ghost {

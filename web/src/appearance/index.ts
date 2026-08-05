@@ -1,6 +1,6 @@
-/** Client-side appearance themes (Default / Liquid / Custom). */
+/** Client-side appearance themes (Default / Liquid / Custom / Edge). */
 
-export type AppearanceId = "default" | "liquid" | "custom";
+export type AppearanceId = "default" | "liquid" | "custom" | "edge";
 export type BgKind = "color" | "image";
 /** Liquid-only: bundled wallpaper, or user color/image. */
 export type LiquidBgKind = "wallpaper" | "color" | "image";
@@ -50,7 +50,10 @@ function migrateV1(raw: string): AppearanceState | null {
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const id =
-      parsed.id === "liquid" || parsed.id === "custom" || parsed.id === "default"
+      parsed.id === "liquid" ||
+      parsed.id === "custom" ||
+      parsed.id === "edge" ||
+      parsed.id === "default"
         ? parsed.id
         : null;
     if (!id) return null;
@@ -136,6 +139,11 @@ export function applyAppearance(state: AppearanceState): void {
     } else {
       applyBgColor(root, state.bgColor);
     }
+    return;
+  }
+
+  if (state.id === "edge") {
+    clearBg(root);
     return;
   }
 

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { createEggGameAudio, type EggGameAudio } from "../egg-game-sounds";
 import { useDialogModal } from "../hooks/useDialogModal";
+import { IconVolume, IconVolumeOff } from "./ActionIcons";
 
 interface EasterEggGameProps {
   onClose: () => void;
@@ -267,12 +269,23 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
   useDialogModal(dialogRef, onClose);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioRef = useRef<EggGameAudio | null>(null);
+  const mutedRef = useRef(false);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [status, setStatus] = useState<"play" | "won" | "lost">("play");
+  const [muted, setMuted] = useState(false);
   const [restartKey, setRestartKey] = useState(0);
   const statusRef = useRef(status);
   statusRef.current = status;
+  mutedRef.current = muted;
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    mutedRef.current = next;
+    audioRef.current?.setMuted(next);
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -281,6 +294,7 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
     if (!ctx) return;
 
     const starts = parseStarts();
+    const totalPellets = starts.pellets.size + starts.power.size;
     let pellets = new Set(starts.pellets);
     let power = new Set(starts.power);
     let scoreLocal = 0;
@@ -329,6 +343,11 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
 
     canvas.width = COLS * CELL;
     canvas.height = ROWS * CELL;
+
+    const audio = createEggGameAudio();
+    audio.setMuted(mutedRef.current);
+    audioRef.current = audio;
+    audio.onRoundStart();
 
     const onKey = (event: KeyboardEvent) => {
       if (statusRef.current !== "play") {
@@ -399,11 +418,13 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
           pellets.delete(key);
           scoreLocal += 10;
           setScore(scoreLocal);
+          audio.onPellet();
         }
         if (power.has(key)) {
           power.delete(key);
           scoreLocal += 50;
           setScore(scoreLocal);
+          audio.onPower();
           frightTimer = 55;
           for (const g of ghosts) {
             if (!g.eaten) g.frightened = true;
@@ -452,12 +473,15 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
               g.eatenTicks = 0;
               scoreLocal += 200;
               setScore(scoreLocal);
+              audio.onEatGhost();
             } else if (!g.eaten) {
               livesLocal -= 1;
               setLives(livesLocal);
+              audio.onDeath();
               if (livesLocal <= 0) {
                 lost = true;
                 setStatus("lost");
+                audio.onGameOver();
               } else {
                 resetPositions();
               }
@@ -469,8 +493,18 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
         if (pellets.size === 0 && power.size === 0) {
           won = true;
           setStatus("won");
+          audio.onWin();
         }
       }
+
+      const levelProgress =
+        totalPellets > 0 ? 1 - (pellets.size + power.size) / totalPellets : 1;
+      const frightened = frightTimer > 0;
+      audio.tickSiren({
+        playing: statusRef.current === "play" && !won && !lost,
+        frightened,
+        levelProgress,
+      });
 
       // Board
       ctx.fillStyle = BOARD.bg;
@@ -552,6 +586,8 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("keydown", onKey);
+      audioRef.current = null;
+      audio.dispose();
     };
   }, [restartKey]);
 
@@ -567,9 +603,21 @@ export function EasterEggGame({ onClose }: EasterEggGameProps) {
       <div className="device-picker__panel egg-game__panel">
         <header>
           <h3>Platform chase</h3>
-          <button type="button" className="picker-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <div className="egg-game__header-actions">
+            <button
+              type="button"
+              className="egg-game__mute"
+              onClick={toggleMute}
+              aria-label={muted ? "Unmute game sounds" : "Mute game sounds"}
+              aria-pressed={muted}
+              title={muted ? "Unmute" : "Mute"}
+            >
+              {muted ? <IconVolumeOff className="egg-game__mute-icon" /> : <IconVolume className="egg-game__mute-icon" />}
+            </button>
+            <button type="button" className="picker-close" onClick={onClose} aria-label="Close">
+              ×
+            </button>
+          </div>
         </header>
 
         <div className="egg-game__hud" aria-live="polite">
