@@ -112,6 +112,10 @@ def has_device_clipboard(serial: str) -> bool:
 # Last text we pushed onto a device via SET_CLIPBOARD (echo suppression).
 _last_pushed: dict[str, str] = {}
 
+# Last clipboard that originated from a connected device (copy / Ctrl+C sync).
+# Used so a later desktop copy (host diverges) wins over a stale peer device clip.
+_last_device_origin_text = ""
+
 
 def note_clipboard_push(serial: str, text: str) -> None:
     with _lock:
@@ -123,18 +127,42 @@ def was_clipboard_push_echo(serial: str, text: str) -> bool:
         return _last_pushed.get(serial) == text
 
 
+def note_device_origin_clipboard(text: str) -> None:
+    """Record text that came from a device copy (and was synced to peers / host)."""
+    global _last_device_origin_text
+    if not text:
+        return
+    with _lock:
+        _last_device_origin_text = text
+
+
 def resolve_paste_text(*, client_text: str, target_serial: str) -> tuple[str, str]:
     """
     Choose text to paste onto ``target_serial``.
 
-    Device→device (Samsung copy → Xiaomi paste) must NOT use the target device's
-    own stale clipboard. Prefer the most recent clipboard from another connected
-    device, then client paste-event text (if it isn't the target's own clip),
-    then the compositor clipboard.
+    Priority:
+    1. Compositor clipboard when it diverged from the last device-originated
+       sync (user copied in a desktop app after a phone copy). Beats a stale
+       JS mirror that still holds the previous phone text.
+    2. Client paste-event text, if it is not the target's own stale local clip.
+    3. Most recent clipboard from another connected device (device → device).
+    4. Host / client fallbacks.
     """
     other = most_recent_clipboard_except(target_serial)
     own = device_own_clipboard(target_serial)
     client = client_text or ""
+    with _lock:
+        device_origin = _last_device_origin_text
+
+    host = read_host_clipboard_text()
+    # Fresh desktop copy: OS clipboard no longer matches the last phone sync.
+    if host and host != own and host != device_origin:
+        return host, "host"
+
+    # Desktop paste event / browser clipboard — skip target-local pollution and
+    # skip a stale JS mirror that still equals the last phone-origin sync.
+    if client and client != own and client != device_origin:
+        return client, "client"
 
     if other:
         return other, "device"
@@ -142,7 +170,6 @@ def resolve_paste_text(*, client_text: str, target_serial: str) -> tuple[str, st
     if client and client != own:
         return client, "client"
 
-    host = read_host_clipboard_text()
     if host and host != own:
         return host, "host"
 

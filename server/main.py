@@ -621,6 +621,7 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                 from .host_clipboard import (
                     device_own_clipboard,
                     note_clipboard_push,
+                    note_device_origin_clipboard,
                     remember_device_clipboard,
                     was_clipboard_push_echo,
                     write_host_clipboard_text,
@@ -653,6 +654,7 @@ async def _relay_android(websocket: WebSocket, stream: ScrcpyStream) -> None:
                     explicit or (not within_grace and text != prev)
                 )
                 if should_sync:
+                    note_device_origin_clipboard(text)
                     # Fire-and-forget — don't stall the control reader on wl-copy.
                     loop.run_in_executor(None, write_host_clipboard_text, text)
 

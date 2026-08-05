@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Desktop → device paste** — Ctrl+V no longer prefers a stale peer-device clipboard over a fresher desktop copy (`wl-paste` / paste event).
+
 ## [0.7.0] — 2026-08-05
 
 ### Added
